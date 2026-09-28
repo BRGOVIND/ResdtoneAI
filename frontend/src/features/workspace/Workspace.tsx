@@ -6,6 +6,12 @@ import './workspace.css'
 
 type Surface = 'preview' | 'agent' | 'files'
 
+const startingPoints = [
+  { label: 'A small app', message: 'Build a reading tracker where I can add books, mark my progress, and keep short notes.' },
+  { label: 'A new feature', message: 'Inspect this project and help me add a useful feature. Explain the plan before changing files.' },
+  { label: 'Fix a bug', message: 'Help me investigate a bug in this project. Start by asking for the symptoms and checking the relevant files.' },
+]
+
 interface Props {
   health: Health | null
   connectionError: string | null
@@ -37,11 +43,10 @@ function ProjectPanel({ project, projectName, onCreate, creating, error }: Pick<
   </section>
 }
 
-function AgentPanel({ project, task, events, taskBusy, taskError, onTask }: Pick<Props, 'project' | 'task' | 'events' | 'taskBusy' | 'taskError' | 'onTask'>) {
-  const [message, setMessage] = useState('')
+function AgentPanel({ project, task, events, taskBusy, taskError, onTask, message, setMessage }: Pick<Props, 'project' | 'task' | 'events' | 'taskBusy' | 'taskError' | 'onTask'> & { message: string; setMessage: (message: string) => void }) {
   const [ideaError, setIdeaError] = useState<string | null>(null)
   const ideaInput = useRef<HTMLInputElement>(null)
-  const submit = async (event: FormEvent) => { event.preventDefault(); const text = message.trim(); if (!text) return; await onTask(text); setMessage('') }
+  const submit = async (event: FormEvent) => { event.preventDefault(); const text = message.trim(); if (!project || taskBusy || !text) return; await onTask(text); setMessage('') }
   const readIdea = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -73,30 +78,55 @@ function safePreviewUrl(value: string | null): string | null {
 
 function PreviewStage({ preview, project, health, runtime, onRefreshStatus, statusBusy, statusError }: Pick<Props, 'preview' | 'project' | 'health' | 'runtime' | 'onRefreshStatus' | 'statusBusy' | 'statusError'>) {
   const url = safePreviewUrl(preview?.status === 'ready' ? preview.url : null)
-  return <section className="preview-stage" aria-labelledby="preview-heading"><div className="stage-top"><div><span className="stage-overline">The artifact</span><h2 id="preview-heading">Live preview</h2></div><div className="stage-actions"><span className="stage-status">{url ? 'Ready' : 'Awaiting app'}</span>{project && <button className="status-refresh" type="button" onClick={onRefreshStatus} disabled={statusBusy} aria-label="Refresh runtime and preview status"><Glyph name="refresh"/></button>}</div></div><div className="preview-window"><div className="browser-chrome"><span className="chrome-rule"/><span className="address-bar">{url ? 'Project preview · isolated origin' : 'Your application will appear here'}</span><span className="chrome-mark">R</span></div>{url ? <iframe title="Project live preview" src={url} sandbox="allow-scripts allow-forms allow-same-origin" referrerPolicy="no-referrer"/> : <div className="preview-illustration"><img src="/art/solid-studio-detail.jpg" alt="Original sculpture of terracotta, saffron, and teal forms in a sunlit room" loading="lazy" decoding="async"/><div className="illustration-caption"><span>Preview</span><p>Your app will appear here.</p></div></div>}</div><div className="stage-bottom"><div className="stage-reading"><small>Preview signal</small><strong>{url ? 'Live application' : project ? 'Not started' : 'No project yet'}</strong></div><div className="stage-reading"><small>Runtime</small><strong>{runtime?.state ?? (health?.runtime.isolated ? 'Isolated host ready' : 'Unavailable')}</strong></div><div className="stage-reading"><small>Build</small><strong>Not reported</strong></div></div>{statusError && <p className="inline-error" role="alert">{statusError}</p>}<p className="stage-footnote">{preview?.status === 'ready' && !url ? 'Preview URL rejected or embedding blocked by gateway policy.' : project ? 'New projects use a static framework. Preview needs a supported dev-server project and explicit gateway frame permission.' : 'Create a project to start building. Preview remains empty until backend starts a real app.'}</p></section>
+  return <section className="preview-stage" aria-labelledby="preview-heading"><div className="stage-top"><div><span className="stage-overline">The artifact</span><h2 id="preview-heading">Live preview</h2></div><div className="stage-actions"><span className="stage-status">{url ? 'Ready' : 'Awaiting app'}</span>{project && <button className="status-refresh" type="button" onClick={onRefreshStatus} disabled={statusBusy} aria-label="Refresh runtime and preview status"><Glyph name="refresh"/></button>}</div></div><div className="preview-window"><div className="browser-chrome"><span className="chrome-rule"/><span className="address-bar">{url ? 'Project preview · isolated origin' : 'Your application will appear here'}</span><span className="chrome-mark">R</span></div>{url ? <iframe title="Project live preview" src={url} sandbox="allow-scripts allow-forms allow-same-origin" referrerPolicy="no-referrer"/> : <div className="preview-empty"><Glyph name="terminal"/><strong>No app is running yet.</strong><p>{project ? 'A live app appears when a supported runtime reports a preview URL.' : 'Create a project to begin. This area shows a real app only when one is available.'}</p></div>}</div><div className="stage-bottom"><div className="stage-reading"><small>Preview signal</small><strong>{url ? 'Live application' : project ? 'Not started' : 'No project yet'}</strong></div><div className="stage-reading"><small>Runtime</small><strong>{runtime?.state ?? (health?.runtime.isolated ? 'Isolated host ready' : 'Unavailable')}</strong></div><div className="stage-reading"><small>Build</small><strong>Not reported</strong></div></div>{statusError && <p className="inline-error" role="alert">{statusError}</p>}<p className="stage-footnote">{preview?.status === 'ready' && !url ? 'Preview URL rejected or embedding blocked by gateway policy.' : project ? 'New projects use a static framework. Preview needs a supported dev-server project and explicit gateway frame permission.' : 'Create a project to start building. Preview remains empty until backend starts a real app.'}</p></section>
 }
 
 export function Workspace(props: Props) {
   const [surface, setSurface] = useState<Surface>('preview')
+  const [message, setMessage] = useState('')
+  const hasDraft = Boolean(message.trim())
+  const hasProject = Boolean(props.project)
+  const hasPreview = Boolean(safePreviewUrl(props.preview?.status === 'ready' ? props.preview.url : null))
+  const continueDraft = (event: FormEvent) => {
+    event.preventDefault()
+    if (!message.trim() || props.taskBusy) return
+    setSurface(props.project ? 'agent' : 'files')
+    document.getElementById('workbench')?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }
   return <main className="workspace-page">
     <section className="landing-hero" aria-labelledby="landing-heading">
-      <figure className="landing-visual">
-        <img src="/art/solid-studio-hero.jpg" alt="Original installation of solid terracotta, saffron, and teal sculptures in a sunlit room" fetchPriority="high" decoding="async"/>
-      </figure>
       <div className="workspace-masthead"><div>
-        <div className="eyebrow">Development observatory</div>
-        <h1 id="landing-heading">Start with the <em>messy version.</em></h1>
-        <p>A note, a rough brief, a half-built idea. Start a project, tell the agent what to change, and see what actually runs.</p>
+        <div className="eyebrow">Your development workspace</div>
+        <h1 id="landing-heading">Make the thing <em>you need.</em></h1>
+        <p>Start with a few words. Shape the code in your project, then inspect what runs.</p>
         <div className="landing-actions">
           <a className="landing-primary" href="#workbench">Open the workbench <Glyph name="arrow"/></a>
           <a className="landing-secondary" href="#approach">See how it works</a>
         </div>
       </div></div>
+      <div className="landing-prompt">
+      <form className="landing-console" onSubmit={continueDraft}>
+        <div className="landing-console-top"><span>Your next request</span><span>Draft first. Build next.</span></div>
+        <label htmlFor="landing-draft">What are you building?</label>
+        <textarea id="landing-draft" rows={4} maxLength={20_000} value={message} onChange={event => setMessage(event.target.value)} disabled={props.taskBusy} placeholder="An app you wish existed. A feature you need. A bug to fix." aria-describedby="draft-notice"/>
+        <div className="landing-console-bottom"><p id="draft-notice">Nothing is sent until you submit from a project.</p><button type="submit" disabled={!message.trim() || props.taskBusy}>{props.project ? 'Review request' : 'Continue to project'} <Glyph name="arrow"/></button></div>
+      </form>
+      <div className="landing-starting-points" role="group" aria-label="Starting points"><span>Try a starting point</span>{startingPoints.map(point => <button key={point.label} type="button" disabled={props.taskBusy} onClick={() => setMessage(point.message)}>{point.label}<Glyph name="plus"/></button>)}</div>
+      <div className="landing-console-context"><span>{props.connectionError ? 'API offline' : props.health ? 'API connected' : 'Connecting'} · {props.project ? props.projectName : 'No project yet'}</span><span>{props.taskBusy ? 'Request in progress' : 'Local draft · Not saved'}</span></div>
+      </div>
+    </section>
+    <section className="signal-path" aria-label="Redstone signal path">
+      <div className="signal-path-intro"><span className="eyebrow">The Redstone signal</span><p>From a note to a running app. Each step lights up only when it exists.</p></div>
+      <ol>
+        <li className={hasDraft ? `signal-on ${hasProject ? 'signal-linked' : ''}` : ''}><span className="signal-node" aria-hidden="true"/><strong>Draft</strong><small>{hasDraft ? 'Ready to review' : 'Waiting for an idea'}</small></li>
+        <li className={hasProject ? `signal-on ${hasPreview ? 'signal-linked' : ''}` : ''}><span className="signal-node" aria-hidden="true"/><strong>Project</strong><small>{hasProject ? 'Created' : 'Not created'}</small></li>
+        <li className={hasPreview ? 'signal-on' : ''}><span className="signal-node" aria-hidden="true"/><strong>Preview</strong><small>{hasPreview ? 'Live app' : 'Not running'}</small></li>
+      </ol>
     </section>
     <section className="landing-approach" id="approach" aria-labelledby="approach-heading">
       <div className="landing-approach-intro">
-        <div className="eyebrow">A clear path in</div>
-        <h2 id="approach-heading">From a thought to something you can inspect.</h2>
+        <div className="eyebrow">Beyond the prompt</div>
+        <h2 id="approach-heading">A draft is only the beginning.</h2>
         <p>Project, agent, and preview stay connected. Redstone shows work as ready only when the backend reports it.</p>
       </div>
       <div className="landing-steps">
@@ -109,7 +139,7 @@ export function Workspace(props: Props) {
       <div className="workbench-heading"><div><div className="eyebrow">Your workbench</div><h2 id="workbench-heading">Make the next change.</h2></div><p>Project, agent, and preview stay together here. Nothing is simulated.</p></div>
       <div className="workspace-meta"><span>{props.connectionError ? 'API offline' : props.health ? 'API connected' : 'Connecting'}</span><span>Workspace / {props.project?.project_id ?? 'unassigned'}</span><span>Local development</span></div>
       <div className="surface-tabs" role="group" aria-label="Workspace panels"><button className={surface === 'preview' ? 'active' : ''} onClick={() => setSurface('preview')}>Preview</button><button className={surface === 'agent' ? 'active' : ''} onClick={() => setSurface('agent')}>Agent</button><button className={surface === 'files' ? 'active' : ''} onClick={() => setSurface('files')}>Project</button></div>
-      <div className={'workspace-grid surface-' + surface}><ProjectPanel project={props.project} projectName={props.projectName} onCreate={props.onCreate} creating={props.creating} error={props.createError}/><AgentPanel project={props.project} task={props.task} events={props.events} taskBusy={props.taskBusy} taskError={props.taskError} onTask={props.onTask}/><PreviewStage project={props.project} preview={props.preview} health={props.health} runtime={props.runtime} onRefreshStatus={props.onRefreshStatus} statusBusy={props.statusBusy} statusError={props.statusError}/></div>
+      <div className={'workspace-grid surface-' + surface}><ProjectPanel project={props.project} projectName={props.projectName} onCreate={props.onCreate} creating={props.creating} error={props.createError}/><AgentPanel project={props.project} task={props.task} events={props.events} taskBusy={props.taskBusy} taskError={props.taskError} onTask={props.onTask} message={message} setMessage={setMessage}/><PreviewStage project={props.project} preview={props.preview} health={props.health} runtime={props.runtime} onRefreshStatus={props.onRefreshStatus} statusBusy={props.statusBusy} statusError={props.statusError}/></div>
       {props.connectionError && <div className="connection-banner" role="status"><Glyph name="orbit"/><span>{props.connectionError} Interface remains available; backend operations require connection.</span></div>}
     </section>
   </main>
