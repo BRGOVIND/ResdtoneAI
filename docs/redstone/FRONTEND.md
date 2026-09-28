@@ -10,12 +10,24 @@ authenticated API boundary; the current API has no user authentication.
 The shell has Workspace (the primary artifact and agent), Providers,
 Ecosystem (category structure, no fake installs), Help, and Legal routes.
 Unknown paths render a branded 404 with a route home. Workspace opens with an
-illustrated introduction and a short, factual project-agent-preview explanation;
+prompt-first introduction and a short, factual project-agent-preview explanation;
 the "Open the workbench" link jumps to the working controls. The workbench keeps
 the preview on the left and the project and agent controls on the right. Below
 desktop width, these become selectable
 surfaces, with preview first. A command palette indexes navigation and available
 actions; disabled future actions never simulate success.
+
+Unknown client routes use the shared circuit-break error scene. An uncaught
+React render error uses the same scene with a reload and workspace link, but
+neither page exposes exception details. API failures remain inline, so a
+disconnected backend does not hide the useful workspace. Scrollbars on
+fine-pointer devices use a thin Redstone-colored native rail; touch scrolling
+and reduced-motion behavior retain platform defaults.
+
+The landing composer and agent panel share a local, unsaved request draft.
+Continuing from the landing page opens project controls (or the agent if a
+project already exists); it never sends a task. Only the explicit agent submit
+uses the existing API. Imported idea text also appears in both draft fields.
 
 For production hosting, route `/api` to the Redstone API and rewrite other
 frontend paths to `index.html` so direct `/help`, `/legal`, and unknown-route
@@ -55,22 +67,31 @@ unfinished P0 backend work. None is implied by this frontend.
 
 ## Visual system
 
-Retro-futurist observatory: warm mineral surfaces, dark ocean ink, terracotta,
-and measured yellow. Four original generated sculptural studies under
-`frontend/public/art/` show opaque color forms with visible depth and a
-consistent direction of light. A compressed gallery scene anchors the hero,
-a second photograph fills the empty preview, and two transparent sculptural
-cutouts sit directly on the landing and interior surfaces. They are original
-visuals, not reproductions of an artist's work or third-party photographs.
-The dust-inspired mark and favicon remain original SVG, not game assets.
-No external image service is required at runtime.
+Interface-led workspace: quiet neutral surfaces, dark ink, muted teal, and
+terracotta actions, with a soft warm-red CSS atmosphere at the entrance.
+The right-hand hero is a compact editable request composer, not
+a decorative picture or simulated chat. The empty preview states that no app
+is running; it never substitutes artwork for a real application. Earlier
+sculptural assets remain unused under `frontend/public/art/`. The dust-inspired
+mark and favicon remain original SVG, not game assets. No image service or
+hero image download is required at runtime.
+
+The public [Lovable landing page](https://lovable.dev/) informed the compact
+composer, spacious entry, and simple product hierarchy. Redstone keeps its
+own split layout, dust mark, warm palette, copy, and existing workbench.
+Starting-point buttons only fill the shared editable draft; they never create
+a project or submit a task. No third-party visual assets or site code are used.
+The original Redstone signal path below the hero responds to actual in-memory
+draft text, the current project's presence, and a ready preview with an
+accepted separate-origin URL. Its disconnected and unavailable states stay
+unlit; it does not imply task progress or make network requests.
 Typography is temporary and fully tokenized (`--font-display`,
 `--font-body`, `--font-mono`; semantic size tokens). Color, spacing, borders,
-and motion are CSS variables. Large decorative orbit rings and flat presentation
-graphics were removed so the artwork supports the product UI.
+and motion are CSS variables. System sans-serif display type and restrained
+headings keep the interface primary rather than making it a presentation.
 
-One-shot panel/mark entrances and a slow, low-cost ambient image drift give the
-world motion without a JavaScript animation loop. `prefers-reduced-motion`
+One-shot panel/mark entrances and small control transitions give the
+interface motion without a JavaScript animation loop. `prefers-reduced-motion`
 disables them. Focus rings, semantic links and buttons,
 labels, live status, and keyboard command access are built in. Navigation
 becomes a compact rail on smaller screens; workspace surfaces are chosen by
@@ -93,14 +114,14 @@ secrets before sending. Other media need a future reviewed backend contract.
 
 ## Art-direction prompt
 
-> Make Redstone feel like a small, useful workshop with a light installation
-> at its entrance. Use original geometric light, architectural shadow, warm
-> paper, deep teal, coral, amber, and aqua. Keep the copy plain and specific:
-> start a project, ask for a change, inspect what runs. Place the introduction
-> before the workbench; make the real controls easy to find. Use sentence-case
-> labels, editorial type, open spacing, and restrained motion with
-> reduced-motion support. Do not copy a specific artist's composition or use
-> stock imagery, generic AI slogans, fake events, or placeholder installs.
+> Make Redstone feel like a useful AI development workspace. Put a real,
+> editable request draft on the right of a short introduction, then show the
+> project-agent-preview workbench. Use quiet neutral surfaces, readable system
+> type, muted teal, and terracotta actions. Keep the copy plain and specific.
+> Use sentence-case labels, open spacing, and restrained motion with
+> reduced-motion support. No decorative pictures, generic AI slogans,
+> simulated conversations, fake events, or placeholder installs. Never send
+> a task from the introduction or make an empty preview look like a running app.
 
 ## Public-launch boundary
 
