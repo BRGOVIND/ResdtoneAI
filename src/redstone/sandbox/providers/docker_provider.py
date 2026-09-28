@@ -50,12 +50,12 @@ from ..models import (
 
 __all__ = ["DockerSandboxProvider", "docker_available", "MANAGED_LABEL", "DEFAULT_IMAGE"]
 
-# Digest-pinned (Phase 4.1). The digest is the one `node:20-alpine` resolved
-# to on this daemon at hardening time; a tag can be repointed upstream, a
-# digest cannot. Rotating it is a deliberate, reviewed change to this line --
+# Digest-pinned (Phase 4.1). This is the official Node 24 LTS Alpine image
+# index digest resolved from Docker Hub on 2026-09-29. A tag can be repointed
+# upstream, a digest cannot. Rotating it is a deliberate, reviewed change --
 # never something a project, an API caller or the agent can select.
 DEFAULT_IMAGE = (
-    "node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293"
+    "node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1"
 )
 
 _CONTAINER_PROJECT_PATH = "/workspace/project"

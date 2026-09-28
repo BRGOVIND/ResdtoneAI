@@ -176,10 +176,10 @@ only becomes real once project code executes, and then belongs to OS isolation.
 the common cases and Windows aliases. Content scanning is not yet implemented,
 so a credential pasted into `src/config.ts` would not be excluded.
 
-**Current image and authentication limits.** The digest-pinned Node 20 image
-is end-of-life and must be replaced with a supported LTS only after real
-Docker install, build, preview, and isolation tests can run. There is no user
-authentication or account-level authorization; do not expose this API to
+**Current image and authentication limits.** The image is now digest-pinned to
+Node 24 LTS, but the updated image has not passed real Docker install, build,
+preview, and isolation tests on this host because Docker Desktop cannot start.
+There is no user authentication or account-level authorization; do not expose this API to
 untrusted users. BYOK keys are request-scoped in Redstone's task records and
 are not sent to generated-code environments, but arbitrary user-supplied
 project content and upstream responses cannot be proven free of secrets.
@@ -408,5 +408,5 @@ grep -rn "subprocess\." src/redstone/sandbox/providers/ | grep "shell=True"   # 
 
 This is a student project under active development and is **not production
 software**. Do not deploy it where untrusted users can reach it: authentication
-is absent, the Node image is end-of-life, and current P0 changes still lack
-live-Docker acceptance evidence.
+is absent, and the Node 24 image and current P0 changes still lack live-Docker
+acceptance evidence.

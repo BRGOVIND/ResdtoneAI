@@ -57,9 +57,11 @@ operation becomes an argv, from a fixed table. Any other framework raises
 
 ## Image
 
-`node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293`
+`node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`
 — digest-pinned; used for sandboxes **and** the egress proxy (no third-party
-proxy image). No configuration, API field or project setting selects it.
+proxy image). No configuration, API field or project setting selects it. The
+index resolves to Node 24.21.0 on Linux/amd64 and Linux/arm64; live sandbox,
+install, build, and preview compatibility still require Docker verification.
 
 ## Container configuration (every sandbox, unconditionally)
 
