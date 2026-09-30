@@ -13,7 +13,9 @@ from agent_fakes import FakeAIGateway, action
 from redstone.agent.service import AgentService
 from redstone.ai.gateway import AIGateway
 from redstone.api.app import create_app
+from redstone.api.service_provider import get_service
 from redstone.config import AIConfig, Limits, RedstoneConfig
+from redstone.domain.models import Framework
 from redstone.runtime.manager import RuntimeManager
 from runtime_fakes import FakeSandboxProvider
 
@@ -44,6 +46,17 @@ def test_create_project(tmp_path):
     assert body["project_id"].startswith("prj_")
     assert body["workspace_id"].startswith("ws_")
     assert body["status"] == "ready"
+
+
+def test_create_react_project_selects_supported_runtime_framework(tmp_path):
+    client = _client(tmp_path)
+    response = client.post("/api/projects", json={
+        "name": "Portfolio", "framework": Framework.REACT_VITE_TS.value,
+    })
+
+    assert response.status_code == 200
+    project_id = response.json()["project_id"]
+    assert get_service(client.app).get_project(project_id).framework is Framework.REACT_VITE_TS
 
 
 def test_create_project_rejects_empty_name(tmp_path):

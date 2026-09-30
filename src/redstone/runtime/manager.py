@@ -19,6 +19,7 @@ redstone.agent.service:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 import time
@@ -354,13 +355,20 @@ class RuntimeManager:
             output_bytes=self._resource_limits.output_bytes,
             storage_mb=self._resource_limits.storage_mb,
         )
+        environment = {"NODE_ENV": "development", "PORT": str(_DEV_SERVER_PORT)}
+        # Docker Desktop's Windows bind mounts can miss host-side file events.
+        # Poll only live previews there so edits made by the agent are visible
+        # without changing a project's own Vite configuration.
+        if os.name == "nt" and command.operation is Operation.START_PREVIEW_SERVER:
+            environment["CHOKIDAR_USEPOLLING"] = "true"
+            environment["CHOKIDAR_INTERVAL"] = "500"
         return SandboxConfig(
             mounts=(Mount(workspace.project_root, _CONTAINER_PROJECT_PATH, read_only=False),),
             working_dir=_CONTAINER_PROJECT_PATH,
             command=command,
             # The complete environment. Nothing from AIConfig, nothing from
             # os.environ -- RuntimeManager has no reference to either.
-            environment={"NODE_ENV": "development", "PORT": str(_DEV_SERVER_PORT)},
+            environment=environment,
             network_policy=network_policy,
             resource_limits=limits,
             egress=self._egress_policy,

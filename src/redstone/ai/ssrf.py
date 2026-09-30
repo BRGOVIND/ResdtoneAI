@@ -63,6 +63,8 @@ def _is_public(host: str) -> bool:
 
     for info in infos:
         address = info[4][0]
+        if not isinstance(address, str):
+            return False
         try:
             ip = ipaddress.ip_address(address.split("%")[0])
         except ValueError:

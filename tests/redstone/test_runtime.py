@@ -9,6 +9,7 @@ the Phase 4/5 testing policy explicitly allows mocking).
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -17,8 +18,9 @@ import pytest
 from redstone.domain.models import Framework, RuntimeState
 from redstone.runtime.errors import RedstoneRuntimeError, RuntimeErrorCode
 from redstone.runtime.manager import RuntimeManager
+from redstone.sandbox.commands import Operation, SandboxCommand
 from redstone.sandbox.errors import RedstoneSandboxError, SandboxErrorCode
-from redstone.sandbox.models import ResourceLimits, SandboxState
+from redstone.sandbox.models import NetworkPolicy, ResourceLimits, SandboxState
 from redstone.workspace.manager import WorkspaceManager
 from runtime_fakes import FakeSandboxProvider
 
@@ -51,6 +53,28 @@ def test_create_returns_a_created_runtime(tmp_path):
     assert runtime.state is RuntimeState.CREATED
     assert runtime.project_id == PROJECT_ID
     assert runtime.workspace_id == workspace.id
+
+
+def test_windows_preview_polling_is_scoped_to_preview(tmp_path):
+    manager = _manager()
+    workspace = _workspace(tmp_path)
+    runtime = manager.create(PROJECT_ID, workspace, Framework.REACT_VITE_TS)
+    configs = {
+        operation: manager._build_config(
+            runtime, workspace, SandboxCommand(operation, Framework.REACT_VITE_TS),
+            network_policy=NetworkPolicy.DENY, timeout_seconds=30,
+        )
+        for operation in (Operation.START_PREVIEW_SERVER, Operation.START_DEV_SERVER,
+                          Operation.INSTALL_DEPENDENCIES)
+    }
+    preview = configs[Operation.START_PREVIEW_SERVER].environment
+    if os.name == "nt":
+        assert preview["CHOKIDAR_USEPOLLING"] == "true"
+        assert preview["CHOKIDAR_INTERVAL"] == "500"
+    else:
+        assert "CHOKIDAR_USEPOLLING" not in preview
+    for operation in (Operation.START_DEV_SERVER, Operation.INSTALL_DEPENDENCIES):
+        assert "CHOKIDAR_USEPOLLING" not in configs[operation].environment
 
 
 def test_create_rejects_a_second_runtime_for_the_same_workspace(tmp_path):

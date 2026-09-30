@@ -7,9 +7,8 @@ hostile.
 > **Status: Phase 2A/2A.1 (filesystem) + 2B (AI gateway) + 3 (coding agent) +
 > 4/4.1/4.2 (sandbox, hardening, install egress) + 5/5.1 (runtime manager) +
 > 6 (live preview backend), all implemented and tested.** There is no user
-> authentication and no frontend yet; rows that depend on them say so.
-> Historical Docker test evidence is described below; current P0 changes
-> still require a live-Docker acceptance run.
+> authentication; the frontend does not change that boundary. The current P0
+> changes passed a live-Docker and Chrome acceptance run on Windows.
 
 ## Trust boundary
 
@@ -98,11 +97,13 @@ creation fails closed. Local execution requires both `REDSTONE_ENV=development`
 and `REDSTONE_UNSAFE_LOCAL_EXECUTION=true`. `/api/health` reports provider
 availability and whether isolation is active.
 
-Earlier Phase 4/5 real-isolation tests ran against Docker Desktop. Docker was
-not available for the current P0 regression run, so present changes have not
-yet been reverified against a live daemon. A deployment without a reachable
-Docker daemon cannot run projects unless the explicit development-only unsafe
-local mode is enabled.
+The current P0 regression run used Docker Desktop 4.93.0 (engine 29.8.1):
+1,063 tests passed, with no skips or failures. This includes real sandbox,
+install-egress, runtime, preview, and Chrome isolation tests, plus the API-to-
+agent-to-build-to-preview acceptance flow. No Redstone-managed containers or
+networks remained after the run. A deployment without a reachable Docker
+daemon cannot run projects unless the explicit development-only unsafe local
+mode is enabled.
 
 **Install-phase egress is restricted to the npm registry (closed in Phase
 4.2), with these residual risks.**
@@ -176,10 +177,9 @@ only becomes real once project code executes, and then belongs to OS isolation.
 the common cases and Windows aliases. Content scanning is not yet implemented,
 so a credential pasted into `src/config.ts` would not be excluded.
 
-**Current image and authentication limits.** The image is now digest-pinned to
-Node 24 LTS, but the updated image has not passed real Docker install, build,
-preview, and isolation tests on this host because Docker Desktop cannot start.
-There is no user authentication or account-level authorization; do not expose this API to
+**Current image and authentication limits.** The image is digest-pinned to
+Node 24 LTS; real Docker install, build, preview, and isolation tests passed
+on this host. There is no user authentication or account-level authorization; do not expose this API to
 untrusted users. BYOK keys are request-scoped in Redstone's task records and
 are not sent to generated-code environments, but arbitrary user-supplied
 project content and upstream responses cannot be proven free of secrets.
@@ -364,8 +364,9 @@ open or residual:
 - the proxy trusts public DNS answers for allowlisted names (#94);
 - the proxy is trusted code.
 
-Docker-specific isolation claims in rows 52–101 have real-daemon tests, but
-these were skipped in the current P0 run because the daemon was unavailable.
+Docker-specific isolation claims in rows 52–101 passed real-daemon tests in
+the current P0 run. This does not turn the unauthenticated local API into a
+safe public multi-user service.
 
 ## Verifying the boundary
 
@@ -387,6 +388,7 @@ python -m pytest tests/redstone/test_preview.py -q                       # 6: pr
 python -m pytest tests/redstone/test_preview_browser.py -q               # 6: browser-origin isolation, real Chrome (needs Playwright)
 python -m pytest tests/redstone/test_preview_lifecycle.py -q             # 6: lifecycle/failures/restart (run alone: reconciles)
 python -m pytest tests/redstone/test_preview_gateway.py -q               # 6: gateway/manager policy, unit + stand-in relay
+python -m pytest tests/redstone/test_p0_acceptance.py -q                  # real API → gateway → agent → Docker → preview → Chrome → edit
 python -m pytest tests/redstone/ -q                        # full suite
 
 # The deterministic core (everything except api/, ai/providers/, and
@@ -408,5 +410,5 @@ grep -rn "subprocess\." src/redstone/sandbox/providers/ | grep "shell=True"   # 
 
 This is a student project under active development and is **not production
 software**. Do not deploy it where untrusted users can reach it: authentication
-is absent, and the Node 24 image and current P0 changes still lack live-Docker
-acceptance evidence.
+and account-level authorization are absent. Passing local live-Docker
+acceptance does not establish production multi-user security.

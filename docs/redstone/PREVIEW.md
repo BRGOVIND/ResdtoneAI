@@ -241,9 +241,10 @@ proxying — **RESERVED**.
   outside, and can't write outside the mount (**DOCKER-ENFORCED**, probed by
   the hostile fixture).
 - Vite's own `/@fs/` route only sees the container's filesystem (tested).
-- **Windows-host note:** bind-mount file events don't reach the container, so
-  a project's file watcher must poll (the Vite fixture sets
-  `server.watch.usePolling`), or the preview must be restarted.
+- **Windows-host note:** bind-mount file events may not reach the container.
+  Redstone enables Chokidar polling only for preview runtimes on Windows, so
+  agent edits reach a live Vite preview without changing project files. Other
+  watcher implementations may still need project-specific polling settings.
 
 ## Ports
 

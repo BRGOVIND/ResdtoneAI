@@ -21,9 +21,9 @@ below is labelled:
 | **ENVIRONMENT LIMITATION** | Can't be reproduced on this development machine. |
 | **RESERVED** | Declared for later; nothing uses it. |
 
-> **Environment.** Earlier isolation tests ran against a real Docker daemon,
-> but the current P0 changes have not been retested against one. Without a
-> daemon, production execution fails closed. `LocalProcessSandboxProvider`
+> **Environment.** The current P0 changes passed real-Docker isolation and
+> acceptance tests on Docker Desktop 4.93.0. Without a daemon, production
+> execution fails closed. `LocalProcessSandboxProvider`
 > requires explicit development-only unsafe opt-in and isolates **nothing**
 > (`is_isolated = False`); `/api/health` reports availability and isolation.
 

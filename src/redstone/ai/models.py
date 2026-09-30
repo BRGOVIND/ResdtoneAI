@@ -34,6 +34,8 @@ class Credential:
     """
 
     __slots__ = ("_value", "source")
+    _value: str
+    source: CredentialSource
 
     def __init__(self, value: str, source: CredentialSource) -> None:
         if not isinstance(value, str) or not value.strip():
@@ -70,7 +72,7 @@ class Credential:
     def __eq__(self, other):
         return self is other
 
-    __hash__ = None
+    __hash__ = None  # type: ignore[assignment]  # matches Python's unhashable protocol
 
 
 @dataclass(frozen=True, slots=True)

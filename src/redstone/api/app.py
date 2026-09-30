@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ..config import RedstoneConfig, load_config
+from ..domain.models import Framework
 from .service_provider import get_runtime_manager, get_service, set_runtime_manager, set_service
 from ..agent.errors import AgentErrorCode, RedstoneAgentError
 from ..agent.service import AgentService
@@ -72,6 +73,7 @@ _PREVIEW_STATUS_FOR_CODE = {
 
 class CreateProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    framework: Framework = Framework.STATIC
 
 
 class AgentRequest(BaseModel):
@@ -170,7 +172,7 @@ def create_app(
     @app.post("/api/projects")
     async def create_project(payload: CreateProjectRequest, request: Request):
         svc = get_service(request.app)
-        project = svc.create_project(payload.name)
+        project = svc.create_project(payload.name, payload.framework)
         return {
             "project_id": project.id,
             "workspace_id": project.workspace_id,
