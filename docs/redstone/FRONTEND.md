@@ -49,9 +49,10 @@ current session can display the created project, but it does not invent a
 durable project library. There are no file-tree or file-content API endpoints;
 the project rail labels that surface unavailable. An agent task POST is
 synchronous, so no progress events can arrive until it returns. Runtime and
-preview APIs exist, but a newly created project defaults to `static`, which
-cannot run the Vite preview. The UI keeps those controls unavailable for that
-project rather than claiming a running app.
+preview APIs exist. The backend can now seed a runnable starter when project
+creation explicitly requests `react-vite-ts`; the current UI still requests
+the `static` default, so its preview controls remain unavailable until the
+planned frontend connection. It does not claim a running app.
 
 ## Security and preview
 
@@ -62,8 +63,8 @@ errors are mapped to fixed, safe messages. Preview URLs are accepted only
 from the API, and rendered only as an iframe on a separate origin with a
 restrictive `sandbox` attribute. The gateway's default `frame-ancestors 'self'`
 blocks embedding until the operator explicitly sets the UI origin. Production
-also needs a distinct registrable preview domain, authentication, and the
-unfinished P0 backend work. None is implied by this frontend.
+also needs a distinct registrable preview domain and authentication. The
+completed local P0 checks do not make the current frontend a public service.
 
 ## Visual system
 

@@ -27,6 +27,7 @@ from .errors import AgentErrorCode, RedstoneAgentError
 from .byok import EphemeralBYOK
 from .loop import run_agent_task
 from .models import AgentStatus, AgentTask
+from .starter import create_react_starter
 from .tools.registry import ToolContext, ToolRegistry, default_registry
 from .tools.validation import UnavailableValidationRunner, ValidationRunner
 
@@ -78,7 +79,13 @@ class AgentService:
             )
 
         project = Project.create(name.strip(), framework)
-        self._workspaces.create(project.workspace_id)
+        workspace = self._workspaces.create(project.workspace_id)
+        try:
+            if framework is Framework.REACT_VITE_TS:
+                create_react_starter(workspace, self._config.limits)
+        except Exception:
+            self._workspaces.destroy(project.workspace_id)
+            raise
         project = project.with_status(ProjectStatus.READY)
 
         with self._projects_lock:

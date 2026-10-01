@@ -176,6 +176,7 @@ def create_app(
         return {
             "project_id": project.id,
             "workspace_id": project.workspace_id,
+            "framework": project.framework.value,
             "status": project.status.value,
         }
 

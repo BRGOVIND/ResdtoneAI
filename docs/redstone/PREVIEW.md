@@ -357,6 +357,7 @@ deliberate: embedding is opt-in.
 - **Previews don't survive a Redstone restart** (by design; reconciled).
 - **The idle/lifetime sweeper runs only if started** (`serve.py` does); crash
   detection is periodic, not instant.
-- **Project creation through the API still defaults to the `static`
-  framework**, which has no dev-server command. Preview needs a
-  `react-vite-ts` project (pre-existing API limitation).
+- **Project creation through the API still defaults to `static`**, which has
+  no dev-server command. An explicit `react-vite-ts` request now seeds a
+  runnable starter; preview start installs its pinned dependencies through
+  the restricted install network. No install occurs during project creation.

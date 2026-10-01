@@ -45,6 +45,7 @@ def test_create_project(tmp_path):
     body = response.json()
     assert body["project_id"].startswith("prj_")
     assert body["workspace_id"].startswith("ws_")
+    assert body["framework"] == Framework.STATIC.value
     assert body["status"] == "ready"
 
 
@@ -56,13 +57,24 @@ def test_create_react_project_selects_supported_runtime_framework(tmp_path):
 
     assert response.status_code == 200
     project_id = response.json()["project_id"]
+    assert response.json()["framework"] == Framework.REACT_VITE_TS.value
     assert get_service(client.app).get_project(project_id).framework is Framework.REACT_VITE_TS
+    assert (get_service(client.app).get_workspace(project_id).project_root / "package.json").exists()
 
 
 def test_create_project_rejects_empty_name(tmp_path):
     client = _client(tmp_path)
     response = client.post("/api/projects", json={"name": ""})
     assert response.status_code == 422   # pydantic min_length validation
+
+
+def test_create_project_rejects_unknown_framework(tmp_path):
+    client = _client(tmp_path)
+    response = client.post("/api/projects", json={
+        "name": "Demo", "framework": "arbitrary-runtime",
+    })
+    assert response.status_code == 422
+    assert not list((tmp_path / "workspaces").glob("*"))
 
 
 def test_start_agent_task(tmp_path):

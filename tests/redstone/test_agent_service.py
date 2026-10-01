@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -13,6 +14,7 @@ from redstone.agent.service import AgentService
 from redstone.ai.errors import AIErrorCode
 from redstone.config import AIConfig, Limits, RedstoneConfig
 from redstone.domain.models import Framework
+from redstone.workspace.files import ProjectTooLargeError
 
 
 def _config(tmp_path, **limit_overrides):
@@ -37,6 +39,36 @@ def test_create_project_provisions_a_real_workspace(tmp_path):
     assert project.framework == Framework.STATIC
     workspace_dir = tmp_path / "workspaces" / project.workspace_id / "project"
     assert workspace_dir.is_dir()
+    assert not list(workspace_dir.iterdir())  # existing static default stays empty
+
+
+def test_create_react_project_seeds_a_runnable_starter(tmp_path):
+    service = _service(tmp_path)
+
+    project = service.create_project("Portfolio", Framework.REACT_VITE_TS)
+    root = service.get_workspace(project.id).project_root
+
+    assert project.status.value == "ready"
+    assert {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()} == {
+        "package.json", "tsconfig.json", "index.html", "src/main.tsx", "src/style.css",
+    }
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    assert package["scripts"]["dev"] == "vite"
+    assert package["scripts"]["build"] == "tsc --noEmit && vite build"
+    assert package["private"] is True
+    assert package["devDependencies"]["vite"] == "7.3.5"
+    assert "node_modules" not in {p.name for p in root.iterdir()}
+    assert "Redstone project" in (root / "index.html").read_text(encoding="utf-8")
+
+
+def test_failed_starter_provision_removes_workspace_and_project(tmp_path):
+    service = _service(tmp_path, max_files=3)
+
+    with pytest.raises(ProjectTooLargeError):
+        service.create_project("Too small", Framework.REACT_VITE_TS)
+
+    assert service._workspaces.list_ids() == ()
+    assert service._projects == {}
 
 
 def test_get_project_roundtrips(tmp_path):
