@@ -2,7 +2,7 @@ import { Glyph } from '../../components/Glyph'
 
 const questions = [
   ['Where do I start?', 'Create a project in Workspace, then describe what you want the agent to change. The request uses your current project.'],
-  ['Why is preview empty?', 'The current project-creation endpoint makes a static project. Live preview needs a supported dev-server project, an isolated runtime, and gateway framing permission.'],
+  ['Why is preview empty?', 'Create a project, then choose Start preview in the workbench. It needs Docker and may take a minute to install dependencies. The local API also needs explicit gateway framing permission for the frontend origin.'],
   ['Can I add an idea file?', 'Yes. Choose a small .txt or .md file in the Agent panel. Its text enters the draft locally; nothing is sent until you submit the request.'],
   ['Where are keys and providers?', 'The provider page maps supported gateway adapters and future local connections. Credential entry is intentionally not available in this foundation.'],
 ]

@@ -73,13 +73,18 @@ export function App() {
   }
 
   const startTask = async (message: string) => {
-    if (!project) return
+    if (!project) return false
     setTaskBusy(true); setTaskError(null); setEvents([]); setTask(null)
     try {
       const started = await api.startTask(project.project_id, message)
       const [result, history] = await Promise.all([api.task(started.task_id), api.taskEvents(started.task_id)])
       setTask(result); setEvents(history)
-    } catch (error) { setTaskError(safeError(error)) }
+      if (result.status === 'failed' && result.error?.error_code === 'AI_NOT_CONFIGURED')
+        setTaskError('No AI provider is configured for this local server. Your draft is still here.')
+      else if (result.status !== 'completed')
+        setTaskError('The task did not complete. Your draft is still here; check the task status before retrying.')
+      return result.status === 'completed'
+    } catch (error) { setTaskError(safeError(error)); return false }
     finally { setTaskBusy(false) }
   }
 
@@ -97,6 +102,18 @@ export function App() {
     else if (noResource(previewResult.reason)) setPreview(null)
     else setStatusError(safeError(previewResult.reason))
     setStatusBusy(false)
+  }
+
+  const changePreview = async (action: 'start' | 'stop') => {
+    if (!project) return
+    setStatusBusy(true); setStatusError(null)
+    try {
+      const next = action === 'start' ? await api.startPreview(project.project_id) : await api.stopPreview(project.project_id)
+      setPreview(next)
+      const latestRuntime = await api.runtime(project.project_id)
+      setRuntime(latestRuntime)
+    } catch (error) { setStatusError(safeError(error)) }
+    finally { setStatusBusy(false) }
   }
 
   const commands = [
@@ -129,7 +146,7 @@ export function App() {
       <div className="header-actions"><button className="search-trigger" aria-label="Open command menu" onClick={() => setCommandOpen(true)}><Glyph name="search"/><span>Command</span><kbd>⌘ K</kbd></button></div>
     </header>
     <div id="main-content">
-      {page === 'workspace' ? <Workspace health={health} connectionError={connectionError} project={project} projectName={projectName} creating={creating} createError={createError} onCreate={createProject} task={task} events={events} taskBusy={taskBusy} taskError={taskError} onTask={startTask} preview={preview} runtime={runtime} onRefreshStatus={refreshStatus} statusBusy={statusBusy} statusError={statusError}/>
+      {page === 'workspace' ? <Workspace health={health} connectionError={connectionError} project={project} projectName={projectName} creating={creating} createError={createError} onCreate={createProject} task={task} events={events} taskBusy={taskBusy} taskError={taskError} onTask={startTask} preview={preview} runtime={runtime} onRefreshStatus={refreshStatus} onChangePreview={changePreview} statusBusy={statusBusy} statusError={statusError}/>
         : page === 'providers' ? <ProviderPage/>
         : page === 'ecosystem' ? <EcosystemPage/>
         : page === 'help' ? <HelpPage/>

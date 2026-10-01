@@ -2,3 +2,9 @@
 .status-refresh { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line-dark); background: var(--paper-light); color: var(--ocean); }
 .status-refresh:hover:not(:disabled) { background: var(--yellow); }
 .status-refresh svg { width: 16px; height: 16px; }
+.preview-action { min-height: 30px; padding: 4px 9px; border: 1px solid var(--line-dark); background: var(--paper-light); color: var(--ocean); font-size: var(--text-xs); font-weight: 700; }
+.preview-action:hover:not(:disabled) { background: var(--yellow); }
+@media (max-width: 620px) {
+  .preview-stage .stage-top { height: auto; flex-wrap: wrap; align-items: flex-start; }
+  .preview-stage .stage-actions { width: 100%; justify-content: flex-end; gap: 8px; }
+}

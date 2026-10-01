@@ -6,6 +6,7 @@ export type Loadable<T> =
 export interface Project {
   project_id: string
   workspace_id: string
+  framework: string
   status: string
 }
 

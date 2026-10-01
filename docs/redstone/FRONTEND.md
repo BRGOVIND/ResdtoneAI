@@ -49,10 +49,10 @@ current session can display the created project, but it does not invent a
 durable project library. There are no file-tree or file-content API endpoints;
 the project rail labels that surface unavailable. An agent task POST is
 synchronous, so no progress events can arrive until it returns. Runtime and
-preview APIs exist. The backend can now seed a runnable starter when project
-creation explicitly requests `react-vite-ts`; the current UI still requests
-the `static` default, so its preview controls remain unavailable until the
-planned frontend connection. It does not claim a running app.
+preview APIs exist. The UI now explicitly requests a `react-vite-ts` starter
+and offers start/stop controls for its isolated preview. A running app is shown
+only after the backend reports a ready preview URL. First preview start may
+install pinned dependencies through the restricted Docker install path.
 
 ## Security and preview
 
@@ -142,6 +142,13 @@ when evaluating any closer game-brand resemblance.
 ## Local use
 
 From `frontend/`, run `npm install` then `npm run dev`. Separately run
-`python -m redstone.api.serve` for live API data. Run `npm test`, `npm run
+`$env:REDSTONE_PREVIEW_FRAME_ANCESTORS='http://127.0.0.1:5173'` and
+`python -m redstone.api.serve` in the API terminal. This allows only the
+loopback Vite origin to frame local previews; the gateway's secure default
+remains `'self'`. Create a project, choose **Start preview**, and wait for the
+real Docker-backed app. Stop it when finished. Agent requests require a
+configured provider or request-scoped BYOK, neither of which is supplied by
+the frontend; an agent-first request can also fail validation before the
+starter dependencies are installed (milestone 2). Run `npm test`, `npm run
 typecheck`, and `npm run build` before committing. The frontend can render
 its disconnected state without Docker or an API process.

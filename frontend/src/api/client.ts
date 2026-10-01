@@ -34,7 +34,7 @@ const taskPath = (id: string) => `/agent/tasks/${encodeURIComponent(id)}`
 export const api = {
   health: () => request<Health>('/health'),
   createProject: (name: string) => request<Project>('/projects', {
-    method: 'POST', body: JSON.stringify({ name }),
+    method: 'POST', body: JSON.stringify({ name, framework: 'react-vite-ts' }),
   }),
   startTask: (projectId: string, message: string) => request<Pick<Task, 'task_id' | 'status'>>(
     `${projectPath(projectId)}/agent`, { method: 'POST', body: JSON.stringify({ message }) },
