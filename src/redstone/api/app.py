@@ -67,6 +67,7 @@ _PREVIEW_STATUS_FOR_CODE = {
     PreviewErrorCode.BUSY: 409,
     PreviewErrorCode.LIMIT_REACHED: 429,
     PreviewErrorCode.START_FAILED: 502,
+    PreviewErrorCode.CLEANUP_FAILED: 500,
     PreviewErrorCode.UNAVAILABLE: 503,
 }
 
