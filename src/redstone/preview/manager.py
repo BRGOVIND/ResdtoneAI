@@ -148,14 +148,29 @@ class PreviewManager:
             return
         try:
             self._runtimes.destroy(runtime_id, project_id)
-        except RedstoneRuntimeError:
-            if self._logger is not None:
-                self._logger.warning("preview_runtime_destroy_failed")
+        except RedstoneRuntimeError as exc:
+            raise PreviewError(PreviewErrorCode.CLEANUP_FAILED, internal=exc.internal) from exc
 
-    def _fail(self, preview: Preview, runtime_id: str | None, error: PreviewError) -> Preview:
-        self._discard_runtime(runtime_id, preview.project_id)
+    def _cleanup_failed(self, preview: Preview, error: PreviewError) -> Preview:
+        # Keep the runtime id so stop/destroy/start can retry. Never keep a
+        # browser route to a runtime whose cleanup outcome is uncertain.
         with self._lock:
             self._upstreams.pop(preview.id, None)
+        failed = self._put(preview.with_status(PreviewStatus.FAILED)
+                           .with_error(error.code.value, error.safe_message))
+        if self._logger is not None:
+            self._logger.warning("preview_runtime_destroy_failed")
+        self._emit(EventType.PREVIEW_FAILED, failed, error_code=error.code.value)
+        return failed
+
+    def _fail(self, preview: Preview, runtime_id: str | None, error: PreviewError) -> Preview:
+        with self._lock:
+            self._upstreams.pop(preview.id, None)
+        try:
+            self._discard_runtime(runtime_id, preview.project_id)
+        except PreviewError as cleanup_error:
+            self._cleanup_failed(preview.with_runtime(runtime_id), cleanup_error)
+            raise
         failed = self._put(preview.with_runtime(None).with_status(PreviewStatus.FAILED)
                            .with_error(error.code.value, error.safe_message))
         self._emit(EventType.PREVIEW_FAILED, failed, error_code=error.code.value)
@@ -187,6 +202,19 @@ class PreviewManager:
             old = self._sessions.get(old_id) if old_id else None
             if old is not None and old.status is PreviewStatus.READY:
                 return old
+        if old is not None and old.runtime_id:
+            with self._lock:
+                self._upstreams.pop(old.id, None)
+            try:
+                self._discard_runtime(old.runtime_id, project_id)
+            except PreviewError as cleanup_error:
+                self._cleanup_failed(old, cleanup_error)
+                raise
+            self._put(old.with_runtime(None))
+
+        with self._lock:
+            old_id = self._by_project.get(project_id)
+            old = self._sessions.get(old_id) if old_id else None
             if not getattr(self._runtimes.provider, "is_isolated", False):
                 raise PreviewError(PreviewErrorCode.UNAVAILABLE,
                                    internal="sandbox provider does not isolate")
@@ -243,7 +271,11 @@ class PreviewManager:
             preview = self.get_for_project(project_id)
             with self._lock:
                 self._upstreams.pop(preview.id, None)
-            self._discard_runtime(preview.runtime_id, project_id)
+            try:
+                self._discard_runtime(preview.runtime_id, project_id)
+            except PreviewError as cleanup_error:
+                self._cleanup_failed(preview, cleanup_error)
+                raise
             if preview.status is PreviewStatus.STOPPED:
                 return preview
             stopped = self._put(preview.with_runtime(None).with_status(PreviewStatus.STOPPED))
@@ -259,7 +291,11 @@ class PreviewManager:
                 if preview is None:
                     return False
                 self._upstreams.pop(preview.id, None)
-            self._discard_runtime(preview.runtime_id, project_id)
+            try:
+                self._discard_runtime(preview.runtime_id, project_id)
+            except PreviewError as cleanup_error:
+                self._cleanup_failed(preview, cleanup_error)
+                raise
             with self._lock:
                 self._sessions.pop(preview.id, None)
                 self._by_project.pop(project_id, None)
