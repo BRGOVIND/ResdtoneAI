@@ -12,6 +12,7 @@ class PreviewErrorCode(str, Enum):
     BUSY = "PREVIEW_BUSY"
     LIMIT_REACHED = "PREVIEW_LIMIT_REACHED"
     START_FAILED = "PREVIEW_START_FAILED"
+    CLEANUP_FAILED = "PREVIEW_CLEANUP_FAILED"
     UNAVAILABLE = "PREVIEW_UNAVAILABLE"
 
 
@@ -20,6 +21,7 @@ _SAFE_MESSAGES = {
     PreviewErrorCode.BUSY: "This project is busy; try again shortly.",
     PreviewErrorCode.LIMIT_REACHED: "Too many previews are running.",
     PreviewErrorCode.START_FAILED: "The preview could not be started.",
+    PreviewErrorCode.CLEANUP_FAILED: "The preview runtime could not be cleaned up. Try stopping or deleting the preview again.",
     PreviewErrorCode.UNAVAILABLE: "Live preview is unavailable in this environment.",
 }
 
