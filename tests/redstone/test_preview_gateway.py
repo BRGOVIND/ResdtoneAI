@@ -19,7 +19,9 @@ import pytest
 from starlette.testclient import TestClient
 
 from preview_support import LiveServer, REACT, free_port, raw_request
-from redstone.config import PreviewConfig
+from redstone.agent.service import AgentService
+from redstone.api.app import create_app
+from redstone.config import PreviewConfig, RedstoneConfig
 from redstone.domain.models import EventType, PreviewStatus
 from redstone.events.bus import EventBus
 from redstone.preview.errors import PreviewError, PreviewErrorCode
@@ -32,6 +34,7 @@ from redstone.preview.gateway import (
 from redstone.preview.manager import PreviewManager, probe_upstream
 from redstone.preview.models import PreviewEndpoint, is_preview_id, new_preview_id
 from redstone.runtime.manager import RuntimeManager
+from redstone.sandbox.errors import RedstoneSandboxError, SandboxErrorCode
 from redstone.sandbox.models import RELAY_TOKEN_HEADER, PreviewUpstream, SandboxState
 from redstone.workspace.manager import WorkspaceManager
 from runtime_fakes import FakeSandboxProvider
@@ -308,6 +311,108 @@ def test_stop_destroy_idempotency_and_unknowns(tmp_path, relay):
     assert previews.stop("prj_u").status is PreviewStatus.STOPPED
     assert previews.destroy("prj_u") is True
     assert previews.destroy("prj_u") is False
+
+
+def _fail_next_destroy(monkeypatch, provider):
+    original_destroy = provider.destroy
+    pending = True
+
+    def destroy(sandbox_id):
+        nonlocal pending
+        if pending:
+            pending = False
+            raise RedstoneSandboxError(SandboxErrorCode.DESTROY_FAILED)
+        original_destroy(sandbox_id)
+
+    monkeypatch.setattr(provider, "destroy", destroy)
+
+
+@pytest.mark.parametrize("action", ["stop", "destroy"])
+def test_cleanup_failure_revokes_preview_and_retains_retryable_runtime(tmp_path, relay,
+                                                                      monkeypatch, action):
+    provider, runtimes, previews = _manager(tmp_path, relay)
+    workspace = _workspace(tmp_path)
+    preview = previews.start("prj_u", workspace, REACT)
+    sandbox_id = runtimes.get(preview.runtime_id, "prj_u").sandbox_id
+    _fail_next_destroy(monkeypatch, provider)
+
+    with pytest.raises(PreviewError) as caught:
+        getattr(previews, action)("prj_u")
+    assert caught.value.code is PreviewErrorCode.CLEANUP_FAILED
+    failed = previews.get_for_project("prj_u")
+    assert failed.status is PreviewStatus.FAILED
+    assert failed.runtime_id == preview.runtime_id
+    assert failed.last_error["error_code"] == PreviewErrorCode.CLEANUP_FAILED.value
+    assert previews.describe(failed)["url"] is None
+    assert previews.resolve(preview.id) is None
+    assert provider.live_sandbox_ids() == {sandbox_id}
+
+    if action == "stop":
+        assert previews.stop("prj_u").status is PreviewStatus.STOPPED
+        assert previews.get_for_project("prj_u").runtime_id is None
+    else:
+        assert previews.destroy("prj_u") is True
+        with pytest.raises(PreviewError) as missing:
+            previews.get_for_project("prj_u")
+        assert missing.value.code is PreviewErrorCode.NOT_FOUND
+    assert provider.live_sandbox_ids() == set()
+
+
+def test_start_retries_previous_failed_cleanup_before_issuing_new_capability(tmp_path, relay,
+                                                                             monkeypatch):
+    provider, _, previews = _manager(tmp_path, relay)
+    workspace = _workspace(tmp_path)
+    preview = previews.start("prj_u", workspace, REACT)
+    _fail_next_destroy(monkeypatch, provider)
+    with pytest.raises(PreviewError):
+        previews.stop("prj_u")
+
+    replacement = previews.start("prj_u", workspace, REACT)
+    assert replacement.id != preview.id
+    assert replacement.status is PreviewStatus.READY
+    assert previews.status_of(preview.id) is None
+    assert len(provider.live_sandbox_ids()) == 1
+
+
+def test_failed_start_keeps_runtime_if_cleanup_fails(tmp_path, monkeypatch):
+    provider, _, previews = _manager(tmp_path)
+    workspace = _workspace(tmp_path)
+    _fail_next_destroy(monkeypatch, provider)
+
+    with pytest.raises(PreviewError) as caught:
+        previews.start("prj_u", workspace, REACT)
+    assert caught.value.code is PreviewErrorCode.CLEANUP_FAILED
+    failed = previews.get_for_project("prj_u")
+    assert failed.runtime_id is not None
+    assert failed.status is PreviewStatus.FAILED
+    assert len(provider.live_sandbox_ids()) == 1
+    assert previews.stop("prj_u").status is PreviewStatus.STOPPED
+    assert provider.live_sandbox_ids() == set()
+
+
+def test_cleanup_failure_has_safe_api_error_and_retryable_record(tmp_path, relay, monkeypatch):
+    config = RedstoneConfig(workspaces_root=tmp_path / "workspaces")
+    service = AgentService(config)
+    provider, runtimes, previews = _manager(tmp_path, relay)
+    app = create_app(service=service, config=config, runtime_manager=runtimes,
+                     preview_manager=previews)
+    with TestClient(app) as client:
+        project_id = client.post("/api/projects", json={"name": "Cleanup check"}).json()["project_id"]
+        started = client.post(f"/api/projects/{project_id}/preview")
+        assert started.status_code == 200
+        preview_id = started.json()["preview_id"]
+        _fail_next_destroy(monkeypatch, provider)
+
+        stopped = client.post(f"/api/projects/{project_id}/preview/stop")
+        assert stopped.status_code == 500
+        assert stopped.json() == PreviewError(PreviewErrorCode.CLEANUP_FAILED).to_dict()
+        record = client.get(f"/api/projects/{project_id}/preview").json()
+        assert record["preview_id"] == preview_id
+        assert record["status"] == "failed"
+        assert record["url"] is None
+        assert record["last_error"] == stopped.json()
+        assert client.delete(f"/api/projects/{project_id}/preview").json() == {"destroyed": True}
+    assert provider.live_sandbox_ids() == set()
 
 
 def test_sweep_enforces_idle_lifetime_and_notices_crashes(tmp_path, relay):
