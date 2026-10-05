@@ -195,6 +195,10 @@ any → DESTROYED                             (destroy: runtime gone, record for
   `destroy` are safe to repeat; a second `destroy` returns `False`. `stop` and
   `destroy` wait for an in-flight `start` to finish, then tear down — tested
   mid-startup, with nothing left behind.
+- **Cleanup failure.** If runtime destruction fails, the preview immediately
+  stops serving, becomes FAILED, and retains its runtime reference. The API
+  returns `PREVIEW_CLEANUP_FAILED`; stop, delete, or a subsequent start retries
+  destruction before discarding the record or issuing a new capability.
 - **Reconcile.** Previews live in memory. After a Redstone restart every
   preview URL is dead, and Phase 5.1 reconciliation destroys the app, the
   relay (it carries the runtime's labels) and both networks (tested).
@@ -290,6 +294,7 @@ DELETE /api/projects/{project_id}/preview        {"destroyed": true|false}
   paths.
 - Errors: `PREVIEW_NOT_FOUND` 404, `PREVIEW_BUSY` 409,
   `PREVIEW_LIMIT_REACHED` 429, `PREVIEW_START_FAILED` 502,
+  `PREVIEW_CLEANUP_FAILED` 500,
   `PREVIEW_UNAVAILABLE` 503.
 - Previews are refused (`PREVIEW_UNAVAILABLE`) on a provider that doesn't
   isolate: `LocalProcessSandboxProvider` is never used to serve untrusted code
@@ -323,7 +328,7 @@ deliberate: embedding is opt-in.
 | `test_preview.py` | 53 | **REAL DOCKER** + real sockets (two hostile previews) |
 | `test_preview_lifecycle.py` | 14 | **REAL DOCKER** (incl. real Vite, and agent → API → preview) |
 | `test_preview_browser.py` | 3 | **REAL BROWSER** (system Chrome via Playwright) + **REAL DOCKER** |
-| `test_preview_gateway.py` | 79 | UNIT (policy functions, ids, config) + MOCKED (fake provider, stand-in relay on real sockets) |
+| `test_preview_gateway.py` | 84 | UNIT (policy functions, ids, config) + MOCKED (fake provider, stand-in relay on real sockets) |
 
 - The browser tests skip with an explicit reason if Playwright isn't
   installed. In this environment it was installed into the job's temp
