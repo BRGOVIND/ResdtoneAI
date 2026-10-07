@@ -35,6 +35,7 @@ from redstone.preview.errors import PreviewError, PreviewErrorCode
 from redstone.preview.gateway import create_preview_gateway_app
 from redstone.preview.manager import PreviewManager
 from redstone.runtime.manager import RuntimeManager
+from redstone.runtime.validation import SandboxValidationRunner
 from redstone.sandbox.providers.docker_provider import DockerSandboxProvider, docker_available
 from redstone.sandbox.providers.local_provider import LocalProcessSandboxProvider
 
@@ -255,17 +256,27 @@ def test_agent_to_preview_end_to_end_through_the_api(env, tmp_path):
                 ".listen(5173,'0.0.0.0')")
 
     package = json.dumps({"name": "agent-app", "version": "1.0.0", "private": True,
-                          "scripts": {"dev": "node server.js"}})
+                          "scripts": {"dev": "node server.js",
+                                      "build": "tsc --noEmit && node --check server.js"},
+                          "dependencies": {"react": "19.1.0", "react-dom": "19.1.0"},
+                          "devDependencies": {"@types/react": "19.1.0",
+                                              "@types/react-dom": "19.1.0",
+                                              "typescript": "5.8.3", "vite": "7.3.5"}})
     gateway = FakeAIGateway([
         action("tool_call", tool="write_file", arguments={"path": "package.json", "content": package}),
         action("tool_call", tool="write_file", arguments={"path": "server.js", "content": server("AGENT-V1")}),
+        action("tool_call", tool="run_typecheck", arguments={}),
+        action("tool_call", tool="run_build", arguments={}),
         action("complete", summary="built v1"),
         action("tool_call", tool="write_file", arguments={"path": "server.js", "content": server("AGENT-V2")}),
+        action("tool_call", tool="run_typecheck", arguments={}),
+        action("tool_call", tool="run_build", arguments={}),
         action("complete", summary="built v2"),
     ])
     config = RedstoneConfig(workspaces_root=tmp_path / "workspaces", limits=Limits(),
                             ai=AIConfig(), preview=env.config)
-    service = AgentService(config, gateway=gateway)
+    service = AgentService(config, gateway=gateway, runtime_manager=env.runtimes,
+                           validation_runner=SandboxValidationRunner(env.runtimes.provider))
     client = TestClient(create_app(service=service, config=config, runtime_manager=env.runtimes,
                                    preview_manager=env.previews))
 

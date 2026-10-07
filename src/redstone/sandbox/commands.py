@@ -40,7 +40,7 @@ _TABLE: dict[Framework, dict[Operation, tuple[str, ...]]] = {
         Operation.INSTALL_DEPENDENCIES: ("npm", "install", "--no-audit", "--no-fund"),
         Operation.TYPECHECK: ("npx", "--no-install", "tsc", "--noEmit"),
         Operation.LINT: ("npx", "--no-install", "eslint", "."),
-        Operation.BUILD: ("npm", "run", "build", "--if-present"),
+        Operation.BUILD: ("npm", "run", "build"),
         Operation.START_DEV_SERVER: (
             "npm", "run", "dev", "--",
             "--port", "5173", "--strictPort", "--host", "127.0.0.1",

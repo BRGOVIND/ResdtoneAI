@@ -28,6 +28,7 @@ class RuntimeErrorCode(str, Enum):
     START_FAILED = "RUNTIME_START_FAILED"
     STOP_FAILED = "RUNTIME_STOP_FAILED"
     TIMEOUT = "RUNTIME_TIMEOUT"
+    CANCELLED = "RUNTIME_CANCELLED"
     RESOURCE_LIMIT = "RUNTIME_RESOURCE_LIMIT"
     NETWORK_DENIED = "RUNTIME_NETWORK_DENIED"
     HEALTHCHECK_FAILED = "RUNTIME_HEALTHCHECK_FAILED"
@@ -44,6 +45,7 @@ _SAFE_MESSAGES = {
     RuntimeErrorCode.START_FAILED: "The runtime could not be started.",
     RuntimeErrorCode.STOP_FAILED: "The runtime could not be stopped.",
     RuntimeErrorCode.TIMEOUT: "The runtime operation timed out.",
+    RuntimeErrorCode.CANCELLED: "Dependency preparation was cancelled.",
     RuntimeErrorCode.RESOURCE_LIMIT: "The runtime exceeded a resource limit.",
     RuntimeErrorCode.NETWORK_DENIED: "That network access is not permitted.",
     RuntimeErrorCode.HEALTHCHECK_FAILED: "The runtime did not become healthy in time.",

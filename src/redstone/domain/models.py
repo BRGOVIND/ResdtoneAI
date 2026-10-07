@@ -81,6 +81,8 @@ class ChangeKind(str, Enum):
 
 
 class EventType(str, Enum):
+    AGENT_PREPARING = "agent.preparing"
+    AGENT_READY = "agent.ready"
     AGENT_STARTED = "agent.started"
     AGENT_STEP_STARTED = "agent.step_started"
     AGENT_TOOL_STARTED = "agent.tool_started"

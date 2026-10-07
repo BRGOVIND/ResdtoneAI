@@ -24,6 +24,9 @@ class AgentErrorCode(str, Enum):
     TOOL_INVALID_ARGUMENTS = "AGENT_TOOL_INVALID_ARGUMENTS"
     MALFORMED_ACTION = "AGENT_MALFORMED_ACTION"
     AI_FAILURE = "AGENT_AI_FAILURE"
+    VALIDATION_REQUIRED = "AGENT_VALIDATION_REQUIRED"
+    VALIDATION_FAILED = "AGENT_VALIDATION_FAILED"
+    VALIDATION_UNAVAILABLE = "AGENT_VALIDATION_UNAVAILABLE"
     INTERNAL_ERROR = "AGENT_INTERNAL_ERROR"
     INVALID_REQUEST = "AGENT_INVALID_REQUEST"
 
@@ -40,6 +43,9 @@ _SAFE_MESSAGES = {
     AgentErrorCode.TOOL_INVALID_ARGUMENTS: "The agent's tool call had invalid arguments.",
     AgentErrorCode.MALFORMED_ACTION: "The agent produced an unreadable response.",
     AgentErrorCode.AI_FAILURE: "The AI provider could not complete the request.",
+    AgentErrorCode.VALIDATION_REQUIRED: "Typecheck and build must pass after the last edit.",
+    AgentErrorCode.VALIDATION_FAILED: "The project validation failed.",
+    AgentErrorCode.VALIDATION_UNAVAILABLE: "Project validation is unavailable.",
     AgentErrorCode.INTERNAL_ERROR: "The agent task failed unexpectedly.",
     AgentErrorCode.INVALID_REQUEST: "The request was invalid.",
 }

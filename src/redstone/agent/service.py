@@ -18,10 +18,13 @@ import threading
 from dataclasses import dataclass, field
 
 from ..ai import AIGateway
+from ..ai.errors import AIErrorCode
 from ..changes.snapshots import SnapshotStore
 from ..config import RedstoneConfig
 from ..domain.models import EventType, Framework, Project, ProjectStatus
 from ..events.bus import Event, EventBus
+from ..runtime.errors import RedstoneRuntimeError, RuntimeErrorCode
+from ..runtime.manager import RuntimeManager
 from ..workspace.manager import Workspace, WorkspaceManager
 from .errors import AgentErrorCode, RedstoneAgentError
 from .byok import EphemeralBYOK
@@ -50,6 +53,7 @@ class AgentService:
         gateway: AIGateway | None = None,
         registry: ToolRegistry | None = None,
         validation_runner: ValidationRunner | None = None,
+        runtime_manager: RuntimeManager | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self._config = config
@@ -57,6 +61,7 @@ class AgentService:
         self._gateway = gateway or AIGateway(config.ai)
         self._registry = registry or default_registry()
         self._validation_runner = validation_runner or UnavailableValidationRunner()
+        self._runtime_manager = runtime_manager
         self._events = event_bus or EventBus()
 
         self._projects_lock = threading.Lock()
@@ -167,6 +172,52 @@ class AgentService:
             # workspace permanently WORKSPACE_BUSY.
             try:
                 workspace = self._workspaces.get(project.workspace_id)
+                if (project.framework is Framework.REACT_VITE_TS
+                        and isinstance(self._gateway, AIGateway)
+                        and byok is None and not self._config.ai.is_configured):
+                    final_task = task.with_status(AgentStatus.FAILED).with_error(
+                        AIErrorCode.NOT_CONFIGURED.value,
+                        "No AI provider key is configured. Add a key and retry the task.",
+                    )
+                    self._record_event(project.id, task.id)(
+                        EventType.AGENT_FAILED,
+                        {"task_id": task.id, "error_code": AIErrorCode.NOT_CONFIGURED.value},
+                    )
+                    _finish(final_task)
+                    return
+                if project.framework is Framework.REACT_VITE_TS:
+                    preparing = task.with_status(AgentStatus.PREPARING)
+                    self._record_update(preparing)
+                    self._record_event(project.id, task.id)(
+                        EventType.AGENT_PREPARING, {"task_id": task.id}
+                    )
+                    try:
+                        if self._runtime_manager is None:
+                            raise RedstoneRuntimeError(
+                                RuntimeErrorCode.CREATE_FAILED,
+                                safe_message="The isolated dependency installer is unavailable.",
+                            )
+                        self._runtime_manager.prepare_dependencies(
+                            project.id, workspace, project.framework,
+                            is_cancelled=cancel_event.is_set,
+                        )
+                    except RedstoneRuntimeError as exc:
+                        if exc.code is RuntimeErrorCode.CANCELLED:
+                            final_task = preparing.with_status(AgentStatus.CANCELLED)
+                            event_type = EventType.AGENT_CANCELLED
+                        else:
+                            final_task = preparing.with_status(AgentStatus.FAILED).with_error(
+                                exc.code.value, exc.safe_message,
+                            )
+                            event_type = EventType.AGENT_FAILED
+                        self._record_event(project.id, task.id)(
+                            event_type, {"task_id": task.id, "error_code": exc.code.value}
+                        )
+                        _finish(final_task)
+                        return
+                    self._record_event(project.id, task.id)(
+                        EventType.AGENT_READY, {"task_id": task.id}
+                    )
                 context = ToolContext(
                     workspace=workspace,
                     limits=self._config.limits,
@@ -176,7 +227,7 @@ class AgentService:
                     workspace.root, workspace.project_root, self._config.limits
                 )
                 final_task = run_agent_task(
-                    task,
+                    preparing if project.framework is Framework.REACT_VITE_TS else task,
                     gateway=self._gateway,
                     registry=self._registry,
                     context=context,
@@ -186,6 +237,7 @@ class AgentService:
                     on_event=self._record_event(project.id, task.id),
                     is_cancelled=cancel_event.is_set,
                     byok=byok,
+                    require_validation=project.framework is Framework.REACT_VITE_TS,
                 )
             except Exception as exc:  # noqa: BLE001 - setup failure before the loop's own safety net
                 final_task = task.with_status(AgentStatus.FAILED).with_error(

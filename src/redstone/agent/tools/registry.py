@@ -168,6 +168,13 @@ class ToolRegistry:
             )
 
         capped, truncated = _truncate_output(output, limits.max_tool_output)
+        if spec.kind == "validate":
+            status = capped.get("status")
+            if status != "passed":
+                code = (AgentErrorCode.VALIDATION_FAILED if status == "failed"
+                        else AgentErrorCode.VALIDATION_UNAVAILABLE)
+                return ToolResult(call_id=call_id, tool=name, ok=False, output=capped,
+                                  error_code=code.value, truncated=truncated)
         return ToolResult(call_id=call_id, tool=name, ok=True, output=capped, truncated=truncated)
 
 

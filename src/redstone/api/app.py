@@ -133,7 +133,9 @@ def create_app(
         if getattr(provider, "is_isolated", False) and getattr(provider, "available", True)
         else None
     )
-    set_service(app, service or AgentService(resolved_config, validation_runner=validation_runner))
+    set_service(app, service or AgentService(
+        resolved_config, validation_runner=validation_runner, runtime_manager=runtime_manager,
+    ))
     # The API only REPORTS where a preview lives. Preview content is served
     # exclusively by the separate gateway app on per-preview origins
     # (redstone.preview.gateway); nothing under this app's origin proxies it.
@@ -185,8 +187,17 @@ def create_app(
     async def start_agent_task(project_id: str, payload: AgentRequest, request: Request):
         svc = get_service(request.app)
         byok = EphemeralBYOK.from_payload(payload.byok) if payload.byok is not None else None
-        task = svc.start_task(project_id, payload.message, byok=byok)
+        # Install and model calls are bounded but slow; keep the API event loop
+        # free so dependency status remains observable during preparation.
+        task = await run_in_threadpool(svc.start_task, project_id, payload.message, byok=byok)
         return {"task_id": task.id, "status": task.status.value}
+
+    @app.get("/api/projects/{project_id}/dependencies")
+    async def dependency_status(project_id: str, request: Request):
+        svc = get_service(request.app)
+        project = svc.get_project(project_id)
+        workspace = svc.get_workspace(project_id)
+        return get_runtime_manager(request.app).dependency_status(workspace, project.framework)
 
     @app.get("/api/agent/tasks/{task_id}")
     async def get_task(task_id: str, request: Request):

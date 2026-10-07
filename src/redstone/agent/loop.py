@@ -25,7 +25,7 @@ from ..domain.models import ChangeKind, EventType, new_id
 from .context import build_ai_messages, render_tool_result
 from .byok import EphemeralBYOK
 from .errors import AgentErrorCode
-from .models import AgentMessage, AgentStatus, AgentStep, AgentTask, StepType
+from .models import AgentMessage, AgentStatus, AgentStep, AgentTask, StepType, ToolResult
 from .tools.registry import ToolContext, ToolRegistry
 
 __all__ = ["run_agent_task"]
@@ -107,6 +107,7 @@ def run_agent_task(
     on_event: Callable[[EventType, dict], None] = lambda e, p: None,
     is_cancelled: Callable[[], bool] = lambda: False,
     byok: EphemeralBYOK | None = None,
+    require_validation: bool = False,
 ) -> AgentTask:
     """Run `task` to completion, failure, cancellation or its iteration/time
     limit. Returns the final AgentTask; never raises for a normal AI or tool
@@ -117,6 +118,7 @@ def run_agent_task(
 
     started_at = time.monotonic()
     tool_specs = registry.catalog()
+    passed_validations: set[str] = set()
 
     task = task.with_status(AgentStatus.PLANNING)
     on_update(task)
@@ -194,15 +196,34 @@ def run_agent_task(
                 continue
 
             if action.kind == "tool_call":
-                task, terminal = _handle_tool_call(
+                task, terminal, result = _handle_tool_call(
                     task, action, registry, context, snapshot_store, on_event
                 )
+                kind = registry.kind_of(action.tool or "")
+                if kind == "mutate":
+                    passed_validations.clear()
+                elif kind == "validate":
+                    if result.ok and result.output.get("status") == "passed":
+                        passed_validations.add(action.tool or "")
+                    else:
+                        passed_validations.discard(action.tool or "")
                 on_update(task)
                 if terminal:
                     return task
                 continue
 
             if action.kind == "complete":
+                if require_validation and not {"run_typecheck", "run_build"} <= passed_validations:
+                    task = task.with_status(AgentStatus.FAILED).with_error(
+                        AgentErrorCode.VALIDATION_REQUIRED.value,
+                        "Typecheck and build must pass after the last edit.",
+                    )
+                    on_update(task)
+                    on_event(EventType.AGENT_FAILED, {
+                        "task_id": task.id,
+                        "error_code": AgentErrorCode.VALIDATION_REQUIRED.value,
+                    })
+                    return task
                 task = _handle_completion(task, action, context, before_state, on_event)
                 on_update(task)
                 return task
@@ -234,7 +255,7 @@ def _handle_tool_call(
     context: ToolContext,
     snapshot_store: SnapshotStore,
     on_event: Callable[[EventType, dict], None],
-) -> tuple[AgentTask, bool]:
+) -> tuple[AgentTask, bool, ToolResult]:
     """Execute one tool call. Returns (updated_task, is_terminal)."""
     assert action.tool is not None and action.arguments is not None
     call_id = new_id("call")
@@ -284,7 +305,7 @@ def _handle_tool_call(
     )
     task = task.with_message(AgentMessage(role="user", content=result_text))
 
-    return task, False
+    return task, False, result
 
 
 def _handle_completion(

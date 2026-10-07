@@ -86,7 +86,38 @@ Rollup-specific retry.
    and retry after failure with real Docker. A configured AI provider is needed
    before claiming the full agent-first path verified.
 
-Milestone 2 implementation has not started; this is its gate and test plan.
+### Milestone 2 progress (2026-10-08)
+
+Status: **in progress, not accepted**. `RuntimeManager.prepare_dependencies()` now
+uses its existing bounded install sandbox and workspace admission slot before a
+React agent task begins. It does not invoke host npm. A process-local manifest
+digest avoids a redundant install when dependencies already exist; a changed
+manifest or missing `node_modules` triggers preparation again. Failure and
+cancellation leave the task retryable, and preparation runtimes are hidden from
+the public runtime history. The task exposes `preparing` and emits
+`agent.preparing` / `agent.ready` events. A read-only project dependency
+endpoint reports `needed`, `preparing`, `ready`, `busy`, `unavailable` or
+`failed` without starting work. A React task cannot be marked
+completed unless isolated typecheck and build both passed after its last edit.
+The build operation no longer uses npm's `--if-present`: a missing build
+script is a failure, not an apparent pass.
+
+This does **not** establish full first-task acceptance. There is no configured
+`AI_API_KEY` on the local machine, and the frontend has no BYOK input yet, so
+a real provider-driven portfolio task remains unverified. The Docker-backed
+tests exercise actual install, validation, and preview isolation; scripted AI
+responses in existing tests do not count as a real model acceptance run.
+Transient registry failures and the optional Rollup package issue remain
+subject to the bounded runtime retry described above.
+
+Verification on this checkout: 218 focused agent/runtime/preview tests passed,
+including real-Docker first-task preparation, denied-network cleanup and retry,
+isolated typecheck/build, the missing-build-script failure, and browser/API
+preview. Frontend typecheck, build and 11 tests passed. The broad Python run
+reached 1,085 passed / 1 failed; that failure was an older preview fixture
+expecting an unvalidated React task to complete. The fixture was corrected and
+passed in the focused rerun. The entire broad suite was not rerun after that
+correction, and no real model/provider acceptance was possible without a key.
 
 ## 3. Local session continuity and control
 

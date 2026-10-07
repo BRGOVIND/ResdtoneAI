@@ -31,6 +31,7 @@ __all__ = [
 
 class AgentStatus(str, Enum):
     CREATED = "created"
+    PREPARING = "preparing"
     PLANNING = "planning"
     INSPECTING = "inspecting"
     EDITING = "editing"
@@ -58,7 +59,8 @@ TERMINAL_STATUSES = frozenset(
 # CANCELLED or TIMED_OUT (checked separately below), so those are not repeated
 # in every row.
 _ACTIVE_TRANSITIONS: dict[AgentStatus, frozenset[AgentStatus]] = {
-    AgentStatus.CREATED: frozenset({AgentStatus.PLANNING}),
+    AgentStatus.CREATED: frozenset({AgentStatus.PREPARING, AgentStatus.PLANNING}),
+    AgentStatus.PREPARING: frozenset({AgentStatus.PLANNING}),
     AgentStatus.PLANNING: frozenset(
         {AgentStatus.INSPECTING, AgentStatus.EDITING, AgentStatus.VALIDATING,
          AgentStatus.COMPLETED}

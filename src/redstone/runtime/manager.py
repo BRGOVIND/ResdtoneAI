@@ -19,11 +19,12 @@ redstone.agent.service:
 from __future__ import annotations
 
 import logging
+import hashlib
 import os
 import re
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 from ..domain.models import EventType, Framework, Runtime, RuntimeState, new_id
 from ..events.bus import EventBus
@@ -72,6 +73,7 @@ _SANDBOX_TO_RUNTIME_ERROR = {
     SandboxErrorCode.CREATE_FAILED: RuntimeErrorCode.CREATE_FAILED,
     SandboxErrorCode.PROVIDER_UNAVAILABLE: RuntimeErrorCode.CREATE_FAILED,
     SandboxErrorCode.TIMEOUT: RuntimeErrorCode.TIMEOUT,
+    SandboxErrorCode.DESTROY_FAILED: RuntimeErrorCode.DESTROY_FAILED,
 }
 
 
@@ -106,6 +108,9 @@ class RuntimeManager:
         self._workspace_active: dict[str, str] = {}   # workspace_id -> runtime_id
         self._op_locks: dict[str, threading.Lock] = {}
         self._expiry_timers: dict[str, threading.Timer] = {}
+        self._prepared_manifests: dict[str, str] = {}
+        self._preparation_ids: set[str] = set()
+        self._preparation_errors: dict[str, str] = {}
 
     # ------------------------------------------------------------- lookup
 
@@ -205,11 +210,111 @@ class RuntimeManager:
 
     def list_for_project(self, project_id: str) -> tuple[Runtime, ...]:
         with self._lock:
-            return tuple(r for r in self._runtimes.values() if r.project_id == project_id)
+            return tuple(r for r in self._runtimes.values()
+                         if r.project_id == project_id and r.id not in self._preparation_ids)
+
+    def dependency_status(self, workspace: Workspace, framework: Framework) -> dict[str, str]:
+        """Safe, read-only readiness view; never starts an install."""
+        if framework is not Framework.REACT_VITE_TS:
+            return {"status": "ready"}
+        with self._lock:
+            active = self._workspace_active.get(workspace.id)
+            preparing = active in self._preparation_ids
+            last_error = self._preparation_errors.get(workspace.id)
+        if preparing:
+            return {"status": "preparing"}
+        if not getattr(self._provider, "available", True):
+            return {"status": "unavailable"}
+        if self._dependencies_ready(workspace):
+            return {"status": "ready"}
+        if active is not None:
+            return {"status": "busy"}
+        if last_error is not None:
+            return {"status": "failed", "error_code": last_error}
+        return {"status": "needed"}
+
+    def prepare_dependencies(
+        self, project_id: str, workspace: Workspace, framework: Framework, *,
+        is_cancelled: Callable[[], bool] | None = None,
+    ) -> None:
+        try:
+            self._prepare_dependencies(project_id, workspace, framework,
+                                       is_cancelled=is_cancelled)
+        except RedstoneRuntimeError as exc:
+            with self._lock:
+                if exc.code in (RuntimeErrorCode.BUSY, RuntimeErrorCode.CANCELLED):
+                    self._preparation_errors.pop(workspace.id, None)
+                else:
+                    self._preparation_errors[workspace.id] = exc.code.value
+            raise
+        else:
+            with self._lock:
+                self._preparation_errors.pop(workspace.id, None)
+
+    def _prepare_dependencies(
+        self, project_id: str, workspace: Workspace, framework: Framework, *,
+        is_cancelled: Callable[[], bool] | None = None,
+    ) -> None:
+        """Prepare a project once per package manifest using the existing install sandbox.
+
+        The runtime admission slot excludes concurrent preview starts and installs.
+        A failed or cancelled install never marks the manifest ready. The cache is
+        intentionally process-local; after a restart we recheck in the sandbox.
+        """
+        if framework is not Framework.REACT_VITE_TS:
+            return
+        manifest = workspace.project_root / "package.json"
+        if not manifest.is_file() or manifest.is_symlink():
+            raise RedstoneRuntimeError(RuntimeErrorCode.INVALID_REQUEST,
+                                       safe_message="The project has no safe package manifest.")
+        if manifest.stat().st_size > 1024 * 1024:
+            raise RedstoneRuntimeError(RuntimeErrorCode.INVALID_REQUEST,
+                                       safe_message="The package manifest is too large.")
+        digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+        with self._lock:
+            ready = (self._prepared_manifests.get(workspace.id) == digest
+                     and (workspace.project_root / "node_modules").is_dir()
+                     and not (workspace.project_root / "node_modules").is_symlink())
+        if ready:
+            return
+        if is_cancelled is not None and is_cancelled():
+            raise RedstoneRuntimeError(RuntimeErrorCode.CANCELLED)
+
+        runtime = self.create(project_id, workspace, framework, _preparation=True)
+        with self._lock:
+            self._prepared_manifests.pop(workspace.id, None)
+        try:
+            with self._op_lock(runtime.id):
+                try:
+                    self._run_install(runtime, workspace, is_cancelled=is_cancelled)
+                except RedstoneSandboxError as exc:
+                    code = _SANDBOX_TO_RUNTIME_ERROR.get(exc.code, RuntimeErrorCode.START_FAILED)
+                    raise RedstoneRuntimeError(code, safe_message=exc.safe_message) from exc
+            if is_cancelled is not None and is_cancelled():
+                raise RedstoneRuntimeError(RuntimeErrorCode.CANCELLED)
+        finally:
+            # If cleanup fails, destroy() retains the workspace slot so no
+            # second install can race a potentially live sandbox.
+            try:
+                self.destroy(runtime.id, project_id)
+            except RedstoneRuntimeError:
+                with self._lock:
+                    self._preparation_ids.discard(runtime.id)
+                raise
+            with self._lock:
+                self._runtimes.pop(runtime.id, None)
+                self._op_locks.pop(runtime.id, None)
+                self._preparation_ids.discard(runtime.id)
+        if hashlib.sha256(manifest.read_bytes()).hexdigest() != digest:
+            raise RedstoneRuntimeError(RuntimeErrorCode.INVALID_REQUEST,
+                                       safe_message="The package manifest changed during preparation.")
+        with self._lock:
+            self._prepared_manifests[workspace.id] = digest
 
     # -------------------------------------------------------------- create
 
-    def create(self, project_id: str, workspace: Workspace, framework: Framework) -> Runtime:
+    def create(self, project_id: str, workspace: Workspace, framework: Framework, *,
+               _preparation: bool = False) -> Runtime:
         if not getattr(self._provider, "available", True):
             raise RedstoneRuntimeError(
                 RuntimeErrorCode.CREATE_FAILED,
@@ -225,6 +330,8 @@ class RuntimeManager:
             )
             self._runtimes[runtime.id] = runtime
             self._workspace_active[workspace.id] = runtime.id
+            if _preparation:
+                self._preparation_ids.add(runtime.id)
 
         self._emit(EventType.RUNTIME_CREATED, runtime.id, project_id=project_id)
         return runtime
@@ -247,7 +354,8 @@ class RuntimeManager:
 
             try:
                 needs_dependencies = self._needs_dependencies(workspace)
-                if needs_dependencies:
+                manifest_before = self._manifest_digest(workspace) if needs_dependencies else None
+                if needs_dependencies and not self._dependencies_ready(workspace):
                     self._run_install(runtime, workspace)
 
                 for attempt in range(2):
@@ -299,6 +407,10 @@ class RuntimeManager:
                 raise wrapped from exc
 
             runtime = self._save(transition(self._get(runtime.id), RuntimeState.RUNNING))
+            if manifest_before is not None and self._manifest_digest(workspace) == manifest_before:
+                with self._lock:
+                    self._prepared_manifests[workspace.id] = manifest_before
+                    self._preparation_errors.pop(workspace.id, None)
             self._arm_expiry(runtime)
             self._emit(EventType.RUNTIME_STARTED, runtime.id)
             return runtime
@@ -306,7 +418,26 @@ class RuntimeManager:
     def _needs_dependencies(self, workspace: Workspace) -> bool:
         return (workspace.project_root / "package.json").is_file()
 
-    def _run_install(self, runtime: Runtime, workspace: Workspace) -> None:
+    @staticmethod
+    def _manifest_digest(workspace: Workspace) -> str | None:
+        manifest = workspace.project_root / "package.json"
+        try:
+            if (not manifest.is_file() or manifest.is_symlink()
+                    or manifest.stat().st_size > 1024 * 1024):
+                return None
+            return hashlib.sha256(manifest.read_bytes()).hexdigest()
+        except OSError:
+            return None
+
+    def _dependencies_ready(self, workspace: Workspace) -> bool:
+        modules = workspace.project_root / "node_modules"
+        with self._lock:
+            prepared = self._prepared_manifests.get(workspace.id)
+        return bool(prepared and modules.is_dir() and not modules.is_symlink()
+                    and self._manifest_digest(workspace) == prepared)
+
+    def _run_install(self, runtime: Runtime, workspace: Workspace, *,
+                     is_cancelled: Callable[[], bool] | None = None) -> None:
         command = SandboxCommand(Operation.INSTALL_DEPENDENCIES, runtime.framework)
         config = self._build_config(
             runtime, workspace, command,
@@ -319,12 +450,40 @@ class RuntimeManager:
         )
         sandbox_id = self._provider.create(config)
         self._save(self._get(runtime.id).with_sandbox(sandbox_id, self._provider.name))
+        cancelled = threading.Event()
+        finished = threading.Event()
+        watcher: threading.Thread | None = None
         try:
+            if is_cancelled is not None and is_cancelled():
+                cancelled.set()
+                raise RedstoneRuntimeError(RuntimeErrorCode.CANCELLED)
             self._provider.start(sandbox_id)
+            if is_cancelled is not None:
+                def _watch_cancel() -> None:
+                    while not finished.wait(0.1):
+                        if is_cancelled():
+                            cancelled.set()
+                            try:
+                                self._provider.kill(sandbox_id)
+                            except RedstoneSandboxError:
+                                pass  # destroy below still owns cleanup
+                            return
+                watcher = threading.Thread(target=_watch_cancel, daemon=True)
+                watcher.start()
             result = self._provider.wait(sandbox_id, timeout=command.max_timeout_seconds)
+        except RedstoneSandboxError as exc:
+            if cancelled.is_set() or (is_cancelled is not None and is_cancelled()):
+                raise RedstoneRuntimeError(RuntimeErrorCode.CANCELLED) from exc
+            raise
         finally:
+            finished.set()
+            if watcher is not None:
+                watcher.join(timeout=1)
             self._provider.destroy(sandbox_id)
             self._save(self._get(runtime.id).with_sandbox(None, None))
+
+        if cancelled.is_set() or (is_cancelled is not None and is_cancelled()):
+            raise RedstoneRuntimeError(RuntimeErrorCode.CANCELLED)
 
         diagnostics = (result.stdout[-1000:] + result.stderr[-1000:])
         if result.resource_limit_exceeded:
@@ -610,7 +769,8 @@ class RuntimeManager:
         the number of runtimes corrected."""
         corrected = 0
         with self._lock:
-            snapshot = list(self._runtimes.values())
+            snapshot = [r for r in self._runtimes.values()
+                        if r.id not in self._preparation_ids]
 
         for runtime in snapshot:
             if runtime.state in TERMINAL_RUNTIME_STATES or runtime.sandbox_id is None:

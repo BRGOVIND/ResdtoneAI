@@ -331,9 +331,8 @@ def test_validation_unavailable_by_default_never_fabricates_success(env):
     final, _ = _run(env, gateway)
 
     tool_result = next(s for s in final.steps if s.type == StepType.TOOL_RESULT)
-    assert tool_result.content["ok"] is True   # the TOOL call itself succeeded...
-    # ...but check the actual reported validation status via the raw ToolResult
-    # by re-running through the registry directly for full detail:
+    assert tool_result.content["ok"] is False
+    # The actual unavailable status is also preserved for the model.
     ws, limits, registry, context, _ = env
     raw = registry.call("x", "run_build", {}, context)
     assert raw.output["status"] == "unavailable"

@@ -23,8 +23,6 @@ from redstone.preview.gateway import create_preview_gateway_app
 from redstone.preview.manager import PreviewManager
 from redstone.runtime.manager import RuntimeManager
 from redstone.runtime.validation import SandboxValidationRunner
-from redstone.sandbox.commands import Operation, SandboxCommand
-from redstone.sandbox.models import Mount, NetworkPolicy, ResourceLimits, SandboxConfig
 from redstone.sandbox.providers.docker_provider import DockerSandboxProvider, docker_available
 
 playwright_api = pytest.importorskip("playwright.sync_api", reason="Playwright is not installed")
@@ -66,23 +64,6 @@ def _action(kind: str, **fields: object) -> dict:
 
 def _tool(name: str, **arguments: object) -> dict:
     return _action("tool_call", tool=name, arguments=arguments)
-
-
-def _install_dependencies(provider: DockerSandboxProvider, project_root) -> None:
-    config = SandboxConfig(
-        mounts=(Mount(project_root, "/workspace/project", read_only=False),),
-        working_dir="/workspace/project",
-        command=SandboxCommand(Operation.INSTALL_DEPENDENCIES, Framework.REACT_VITE_TS),
-        network_policy=NetworkPolicy.INSTALL_ONLY,
-        resource_limits=ResourceLimits(timeout_seconds=180),
-    )
-    sandbox_id = provider.create(config)
-    try:
-        provider.start(sandbox_id)
-        result = provider.wait(sandbox_id, timeout=180)
-        assert result.ok, result.stdout + result.stderr
-    finally:
-        provider.destroy(sandbox_id)
 
 
 def _assert_validated(service: AgentService, task_id: str) -> None:
@@ -137,7 +118,8 @@ def test_portfolio_build_and_edit_through_real_backend(tmp_path):
     previews = PreviewManager(runtimes, preview_config)
     gateway = AIGateway(config.ai, transport=httpx.MockTransport(upstream))
     service = AgentService(config, gateway=gateway,
-                           validation_runner=SandboxValidationRunner(provider))
+                           validation_runner=SandboxValidationRunner(provider),
+                           runtime_manager=runtimes)
     app = create_app(service=service, config=config, runtime_manager=runtimes,
                      preview_manager=previews)
     project_id = None
@@ -154,7 +136,7 @@ def test_portfolio_build_and_edit_through_real_backend(tmp_path):
                 json.dumps(PACKAGE), encoding="utf-8")
             (workspace.project_root / "tsconfig.json").write_text(
                 json.dumps(TSCONFIG), encoding="utf-8")
-            _install_dependencies(provider, workspace.project_root)
+            assert not (workspace.project_root / "node_modules").exists()
 
             byok = {"provider": "openai-compatible", "model": "test-model",
                     "api_key": REQUEST_KEY}
