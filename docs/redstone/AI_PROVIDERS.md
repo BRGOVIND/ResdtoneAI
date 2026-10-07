@@ -87,6 +87,30 @@ log, a URL, a response, or any persistent store. There is no credential store.
 | `MAX_AI_REQUEST_SIZE` | prompt payload ceiling, bytes | 1 MiB |
 | `MAX_AI_RESPONSE_SIZE` | provider response ceiling, bytes | 8 MiB |
 
+For the **Redstone** local backend, set these variables in the same PowerShell
+session that launches `python -m redstone.api.serve`. The backend reads the
+process environment at startup; it does not load a repository `.env` file.
+The root README's `GEMINI_API_KEY` / `.env` instructions are for the older
+BhashaSub `main:app` service, not Redstone. For an interactive local session
+in PowerShell 7, this avoids putting the key in command history:
+
+```powershell
+$env:AI_PROVIDER = 'gemini' # or 'openai-compatible'
+$env:AI_API_KEY = Read-Host 'AI API key' -MaskInput
+python -c "from redstone.config import load_config; from redstone.ai.providers.registry import known_providers; a = load_config().ai; print('AI_API_KEY configured:', 'YES' if a.is_configured else 'NO'); print('Provider registered:', a.provider in known_providers()); print('Model specified:', bool(a.model))"
+python -m redstone.api.serve
+```
+
+Set `AI_MODEL` to a model your provider supports, and set `AI_BASE_URL` too if
+your `openai-compatible` provider requires a nondefault endpoint. If the
+credential already lives in a local
+secret manager, load it into this PowerShell process using that manager's
+approved method instead of re-entering it. An environment change in another
+terminal, editor, or already-running process is not inherited by this one;
+restart the backend after changing the variables. The check confirms only
+local configuration, not that the key or model is accepted by the provider.
+Do not commit credentials or copy them into workspace files.
+
 ## Retry behaviour
 
 Bounded: `1 + max_retries` attempts. Exponential backoff with full jitter.

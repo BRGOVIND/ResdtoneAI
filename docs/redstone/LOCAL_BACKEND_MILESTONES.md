@@ -140,6 +140,28 @@ Python suite was not rerun in this attempt because the required real-provider
 acceptance prerequisite failed; the previous broad-run result above is not
 treated as green.
 
+### Local provider configuration follow-up (2026-10-08)
+
+Redstone has no `.env` loader. `python -m redstone.api.serve` calls
+`load_config()`, which reads `AI_API_KEY` from its inherited process environment
+and passes `AIConfig` through `create_app()` and `AgentService` to `AIGateway`.
+The `GEMINI_API_KEY` / `.env` instructions in the root README apply to the
+separate older BhashaSub service. The [Redstone AI provider guide](AI_PROVIDERS.md#configuration)
+now gives a same-terminal PowerShell setup and a credential-free presence
+check; no second configuration mechanism was added.
+
+A synthetic, non-provider credential passed from PowerShell into a Python
+child and reached `load_config()` and `AgentService`'s `AIGateway`; the provider
+name was registered and a model string was present. This verifies process
+inheritance and local wiring only. In this task's process and Windows User and
+Machine environment scopes, `AI_API_KEY` and `GEMINI_API_KEY` were absent.
+No real credential was located, backend provider detection with a real key
+was not possible, and no real model or portfolio task was run. Milestone 2
+therefore remains **in progress**; full acceptance and the complete-suite
+rerun still require a credential in the backend's launch environment. Seven
+focused configuration tests passed; no backend, preview, managed Docker
+container, or managed Docker network was left running by this follow-up.
+
 ## 3. Local session continuity and control
 
 Make project identity and task state usable across a local server restart
