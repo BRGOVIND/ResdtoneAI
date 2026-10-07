@@ -173,6 +173,33 @@ def test_start_fails_when_the_dev_server_never_becomes_healthy(tmp_path):
     assert failed.sandbox_id not in provider.live_sandbox_ids()
 
 
+@pytest.mark.parametrize("diagnostic, expected_installs", [
+    ("Error: Cannot find module @rollup/rollup-linux-x64-musl. "
+     "npm has a bug related to optional dependencies", 2),
+    ("The dev server crashed for another reason", 1),
+])
+def test_only_missing_rollup_native_package_retries_install(tmp_path, diagnostic,
+                                                            expected_installs):
+    class FailedPreview(FakeSandboxProvider):
+        def logs(self, sandbox_id, max_bytes):
+            return diagnostic[:max_bytes]
+
+    provider = FailedPreview(never_healthy=True)
+    manager = _manager(provider, max_startup_seconds=0.05, health_poll_interval=0.01)
+    workspace = _workspace(tmp_path, with_package_json=True)
+    runtime = manager.create(PROJECT_ID, workspace, Framework.REACT_VITE_TS)
+
+    with pytest.raises(RedstoneRuntimeError) as caught:
+        manager.start(runtime.id, PROJECT_ID, workspace)
+
+    assert caught.value.code is RuntimeErrorCode.HEALTHCHECK_FAILED
+    assert len(provider.wait_calls) == expected_installs
+    assert all(provider.configs[sandbox_id].network_policy is NetworkPolicy.INSTALL_ONLY
+               for sandbox_id in provider.wait_calls)
+    assert provider.live_sandbox_ids() == set()
+    assert manager.get(runtime.id, PROJECT_ID).sandbox_id is None
+
+
 def test_start_never_marks_running_while_the_sandbox_has_crashed(tmp_path):
     """A sandbox that dies mid-startup (before any health probe succeeds)
     must never be reported as RUNNING merely because it was launched."""

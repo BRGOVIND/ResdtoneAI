@@ -71,6 +71,15 @@ the API is never in one of them. Marked as such in `domain/models.py`.
 4. Only a successful probe moves the runtime to `RUNNING`. Any failure tears
    the sandbox down before the runtime is marked `FAILED`.
 
+One observed npm 11 failure needs a narrower recovery path: npm exited zero
+after omitting Rollup's Linux native optional package, then Vite exited with
+Rollup's explicit missing-optional-dependency diagnostic. On that diagnostic
+only, startup destroys the failed dev sandbox, repeats the same restricted
+install once in a new install sandbox, then retries the dev server once. Other
+startup failures, resource-limit failures, and a second failure remain errors.
+The retry never changes the registry allowlist or grants network to the dev
+server.
+
 Every sandbox carries ownership labels: `redstone.project_id`,
 `redstone.workspace_id`, `redstone.runtime_id` and `redstone.purpose` (the
 operation), plus the provider's own `redstone.managed=true`. Opaque ids only.
@@ -302,7 +311,7 @@ redstone.api.serve` runs both.
 
 | File | Tests | Kind |
 |---|---|---|
-| `test_runtime.py` | 33 | fake provider |
+| `test_runtime.py` | 42 | fake provider |
 | `test_runtime_api.py` | 12 | fake provider, HTTP |
 | `test_runtime_docker_integration.py` | 4 | real Docker |
 | `test_runtime_hardening.py` | 31 | 30 unit/fake (error wiring, labels, reconcile policy, config bounds), 1 real Docker (restart recovery) |

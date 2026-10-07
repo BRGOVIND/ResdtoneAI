@@ -48,6 +48,17 @@ __all__ = ["RuntimeManager", "PROJECT_LABEL", "WORKSPACE_LABEL", "RUNTIME_LABEL"
 _CONTAINER_PROJECT_PATH = "/workspace/project"
 _DEV_SERVER_PORT = 5173
 
+
+def _missing_rollup_native_package(logs: str) -> bool:
+    """npm can exit zero after skipping Rollup's platform optional package.
+
+    Rollup prints this diagnostic before Vite exits. A repeat install can
+    fetch the missing package; other startup failures must not be retried.
+    """
+    return ("npm has a bug related to optional dependencies" in logs
+            and "Cannot find module @rollup/rollup-linux-" in logs)
+
+
 PROJECT_LABEL = "redstone.project_id"
 WORKSPACE_LABEL = "redstone.workspace_id"
 RUNTIME_LABEL = "redstone.runtime_id"
@@ -235,21 +246,34 @@ class RuntimeManager:
             self._emit(EventType.RUNTIME_STARTING, runtime.id)
 
             try:
-                if self._needs_dependencies(workspace):
+                needs_dependencies = self._needs_dependencies(workspace)
+                if needs_dependencies:
                     self._run_install(runtime, workspace)
 
-                sandbox_id = self._start_dev_server(runtime, workspace, preview)
-                runtime = self._save(runtime.with_sandbox(sandbox_id, self._provider.name))
+                for attempt in range(2):
+                    sandbox_id = self._start_dev_server(runtime, workspace, preview)
+                    runtime = self._save(runtime.with_sandbox(sandbox_id, self._provider.name))
 
-                if not self._wait_until_healthy(sandbox_id):
+                    if self._wait_until_healthy(sandbox_id):
+                        break
                     exceeded = self._provider.status(sandbox_id).resource_limit_exceeded
+                    retry_install = False
+                    if attempt == 0 and needs_dependencies and not exceeded:
+                        try:
+                            logs = self._provider.logs(sandbox_id, max_bytes=4096)
+                        except RedstoneSandboxError:
+                            logs = ""
+                        retry_install = _missing_rollup_native_package(logs)
                     self._safe_teardown(sandbox_id)
-                    self._save(self._get(runtime.id).with_sandbox(None, None))
+                    runtime = self._save(self._get(runtime.id).with_sandbox(None, None))
                     if exceeded:
                         raise RedstoneRuntimeError(
                             RuntimeErrorCode.RESOURCE_LIMIT,
                             safe_message=f"The runtime exceeded the sandbox '{exceeded}' limit.",
                         )
+                    if retry_install:
+                        self._run_install(runtime, workspace)
+                        continue
                     raise RedstoneRuntimeError(RuntimeErrorCode.HEALTHCHECK_FAILED)
 
             except RedstoneRuntimeError as exc:

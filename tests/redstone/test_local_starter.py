@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -71,3 +73,54 @@ def test_fresh_api_react_project_previews_and_builds(tmp_path):
     after_containers, after_networks = managed()
     assert not after_containers - before_containers
     assert not after_networks - before_networks
+
+
+def test_missing_native_optional_package_gets_one_restricted_reinstall(tmp_path, monkeypatch):
+    config = RedstoneConfig(
+        workspaces_root=tmp_path / "workspaces",
+        preview=PreviewConfig(ready_timeout_seconds=90),
+    )
+    provider = DockerSandboxProvider()
+    runtimes = RuntimeManager(provider, max_startup_seconds=240)
+    previews = PreviewManager(runtimes, config.preview)
+    service = AgentService(config)
+    app = create_app(service=service, config=config, runtime_manager=runtimes,
+                     preview_manager=previews)
+    before_containers, before_networks = managed()
+    project_id = None
+    root = None
+    install_count = 0
+    original_wait = provider.wait
+
+    def wait_and_remove_native_package(sandbox_id, timeout):
+        nonlocal install_count
+        result = original_wait(sandbox_id, timeout)
+        install_count += 1
+        if install_count == 1 and result.ok:
+            assert root is not None
+            native_packages = list((root / "node_modules" / "@rollup").glob(
+                "rollup-linux-*-musl"
+            ))
+            if native_packages:
+                shutil.rmtree(native_packages[0])
+        return result
+
+    monkeypatch.setattr(provider, "wait", wait_and_remove_native_package)
+    try:
+        with TestClient(app) as client:
+            project_id = client.post("/api/projects", json={
+                "name": "Native dependency recovery", "framework": "react-vite-ts",
+            }).json()["project_id"]
+            root = service.get_workspace(project_id).project_root
+            response = client.post(f"/api/projects/{project_id}/preview")
+            assert response.status_code == 200, response.text
+            assert response.json()["status"] == "ready"
+            assert install_count == 2
+            assert list((root / "node_modules" / "@rollup").glob("rollup-linux-*-musl"))
+    finally:
+        if project_id is not None:
+            previews.destroy(project_id)
+
+    after_containers, after_networks = managed()
+    assert after_containers == before_containers
+    assert after_networks == before_networks

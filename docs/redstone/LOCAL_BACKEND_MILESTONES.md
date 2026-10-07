@@ -54,6 +54,40 @@ Make missing Docker, install failure, retries, and in-progress state honest in
 the API. Preserve request-scoped BYOK and test install denial, concurrent
 requests, failure cleanup, and an agent-first local flow against real Docker.
 
+### Install reliability gate (2026-10-07)
+
+Real Docker reproduced a product-side case on the pinned Node 24 image with
+npm 11.19: npm exited zero but omitted `@rollup/rollup-linux-x64-musl` from a
+fresh starter. Vite then crashed before health check. A second install through
+the same registry-only egress policy fetched the missing optional package and
+the preview ran. Runtime startup now performs one bounded reinstall and retry
+only when the failed dev server emits Rollup's specific diagnostic. A real
+Docker fault-injection test removes that package after an otherwise successful
+install and proves recovery without widening network access. The full egress
+suite and repeated fresh-install runs passed after this change. Earlier
+`ECONNRESET` and timeout failures were not reproduced in this run; they remain
+possible external or Docker-network transients, not claimed fixed by the
+Rollup-specific retry.
+
+### Milestone 2 implementation plan
+
+1. Add a single dependency-preparation operation through the existing
+   `RuntimeManager` install-only sandbox path. Share workspace admission with
+   runtime/preview creation so preparation cannot race another install or a
+   running preview. Do not install on the host or in `SandboxValidationRunner`.
+2. Run preparation before the first agent validation, preserving the existing
+   agent task lease and request-scoped BYOK. Report preparing, ready, busy,
+   unavailable, and failed states honestly; keep the task/draft retryable when
+   Docker or an AI provider is unavailable. Never report agent success before
+   real tool, validation, and build results exist.
+3. Accept only a real end-to-end local flow: fresh project, restricted install,
+   agent inspection and file edit, isolated typecheck/build, and isolated
+   preview. Test concurrent requests, failed-install cleanup, denied egress,
+   and retry after failure with real Docker. A configured AI provider is needed
+   before claiming the full agent-first path verified.
+
+Milestone 2 implementation has not started; this is its gate and test plan.
+
 ## 3. Local session continuity and control
 
 Make project identity and task state usable across a local server restart
@@ -63,3 +97,13 @@ retention, deletion, and resource limits together. Test restart, crash,
 timeout, repeated lifecycle calls, and cleanup. Keep the server loopback-only;
 public authentication, account isolation, hosting, and legal policy remain a
 separate decision, not an implicit outcome of these milestones.
+
+## Security backlog outside the local milestones
+
+- No authentication: keep API and preview listeners loopback-only. Public
+  exposure remains unsupported.
+- Workspace secret filtering is primarily path/name based, not content-aware.
+  Do not claim arbitrary credential strings can never persist in project files.
+- `EventBus` filters top-level forbidden keys, but nested lists can retain
+  nested credential-shaped data. Add recursive, bounded sanitization and tests
+  before treating event payloads as safe for wider exposure.
