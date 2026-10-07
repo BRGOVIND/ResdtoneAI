@@ -102,10 +102,11 @@ completed unless isolated typecheck and build both passed after its last edit.
 The build operation no longer uses npm's `--if-present`: a missing build
 script is a failure, not an apparent pass.
 
-This does **not** establish full first-task acceptance. There is no configured
-`AI_API_KEY` on the local machine, and the frontend has no BYOK input yet, so
-a real provider-driven portfolio task remains unverified. The Docker-backed
-tests exercise actual install, validation, and preview isolation; scripted AI
+This does **not** establish full first-task acceptance. The frontend has no
+BYOK input yet, and the Redstone server process used for the final acceptance
+attempt did not receive `AI_API_KEY`, so a real provider-driven portfolio task
+remains unverified. The Docker-backed tests exercise actual install, validation,
+and preview isolation; scripted AI
 responses in existing tests do not count as a real model acceptance run.
 Transient registry failures and the optional Rollup package issue remain
 subject to the bounded runtime retry described above.
@@ -118,6 +119,26 @@ reached 1,085 passed / 1 failed; that failure was an older preview fixture
 expecting an unvalidated React task to complete. The fixture was corrected and
 passed in the focused rerun. The entire broad suite was not rerun after that
 correction, and no real model/provider acceptance was possible without a key.
+
+### Final acceptance attempt (2026-10-08)
+
+The documented `python -m redstone.api.serve` command started the API and
+preview gateway on loopback using a new temporary workspace root. `/api/health`
+reported Docker available and isolated. A static project probe reached the
+backend agent route and ended `failed` with `AI_NOT_CONFIGURED`. The Codex
+task process, Windows User, and Machine environment scopes did not expose
+`AI_API_KEY`; the repository contains only `.env.example`, and the Redstone
+configuration loader reads `AI_API_KEY` from the process environment. This
+does not establish where an operator may have configured a credential in a
+different process. No real model call occurred, so the React portfolio
+acceptance task was not started. Milestone 2 remains **in progress**.
+
+The probe server was stopped. Its isolated temporary workspace was moved to
+the Recycle Bin; no managed Docker containers or networks, preview, or API
+listeners remained. No source files or secrets were changed. The complete
+Python suite was not rerun in this attempt because the required real-provider
+acceptance prerequisite failed; the previous broad-run result above is not
+treated as green.
 
 ## 3. Local session continuity and control
 
