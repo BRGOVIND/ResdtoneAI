@@ -29,6 +29,7 @@ from .service_provider import get_runtime_manager, get_service, set_runtime_mana
 from ..agent.errors import AgentErrorCode, RedstoneAgentError
 from ..agent.service import AgentService
 from ..agent.byok import EphemeralBYOK
+from ..ai import AIGateway, AIRequest, RedstoneAIError
 from ..runtime.errors import RedstoneRuntimeError, RuntimeErrorCode
 from ..runtime.manager import RuntimeManager
 from ..runtime.models import TERMINAL_RUNTIME_STATES
@@ -80,6 +81,10 @@ class CreateProjectRequest(BaseModel):
 class AgentRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     byok: Any = None
+
+
+class ProviderTestRequest(BaseModel):
+    byok: Any
 
 
 def create_app(
@@ -191,6 +196,24 @@ def create_app(
         # free so dependency status remains observable during preparation.
         task = await run_in_threadpool(svc.start_task, project_id, payload.message, byok=byok)
         return {"task_id": task.id, "status": task.status.value}
+
+    @app.post("/api/ai/test")
+    async def test_provider(payload: ProviderTestRequest):
+        """One bounded BYOK request. Return no model text or user-supplied fields."""
+        byok = EphemeralBYOK.from_payload(payload.byok)
+        gateway = AIGateway(resolved_config.ai)
+        try:
+            await run_in_threadpool(
+                gateway.generate,
+                AIRequest.from_prompt("Reply with OK.", max_output_tokens=16),
+                provider=byok.provider,
+                model=byok.model,
+                byok_key=byok.credential.reveal(),
+                base_url=byok.base_url,
+            )
+        except RedstoneAIError as exc:
+            return {"connected": False, "error_code": exc.code.value}
+        return {"connected": True}
 
     @app.get("/api/projects/{project_id}/dependencies")
     async def dependency_status(project_id: str, request: Request):

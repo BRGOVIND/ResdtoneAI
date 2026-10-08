@@ -56,9 +56,10 @@ install pinned dependencies through the restricted Docker install path.
 
 ## Security and preview
 
-No credentials are stored in React state, storage, URLs, telemetry, or UI. The
-provider screen describes modes only; BYOK input is deferred until a reviewed
-one-request credential handoff exists. No analytics or service worker. API
+The user-entered BYOK key remains in React memory only between a successful
+connection test and one agent request; it is then cleared. It is not saved to
+browser storage, URLs, telemetry, workspace files, or generated code. No
+analytics or service worker. API
 errors are mapped to fixed, safe messages. Preview URLs are accepted only
 from the API, and rendered only as an iframe on a separate origin with a
 restrictive `sandbox` attribute. The gateway's default `frame-ancestors 'self'`
@@ -100,9 +101,10 @@ tabs instead of simply stacking three columns.
 
 ## Growth points
 
-Provider descriptors are neutral records (`server`, `byok`, `local` modes;
-capabilities and connection state). The provider catalog is informational,
-not an assertion of backend availability. Skills, plugins, tools, models, and
+Provider descriptors are neutral records (`server`, `byok`, `local` modes).
+The two existing gateway adapters can be selected for request-scoped BYOK;
+future local providers remain informational, not live connections. Skills,
+plugins, tools, models, and
 Markdown docs share a future discovery taxonomy; no catalog endpoint, install
 operation, pricing, or fake item is implemented yet. Future commands should
 carry capability checks and route to typed API methods, not bespoke component
@@ -145,10 +147,14 @@ From `frontend/`, run `npm install` then `npm run dev`. Separately run
 `$env:REDSTONE_PREVIEW_FRAME_ANCESTORS='http://127.0.0.1:5173'` and
 `python -m redstone.api.serve` in the API terminal. This allows only the
 loopback Vite origin to frame local previews; the gateway's secure default
-remains `'self'`. Create a project, choose **Start preview**, and wait for the
-real Docker-backed app. Stop it when finished. Agent requests require a
-configured provider or request-scoped BYOK, neither of which is supplied by
-the frontend; an agent-first request can also fail validation before the
-starter dependencies are installed (milestone 2). Run `npm test`, `npm run
+remains `'self'`. On **Providers**, select a provider and model, enter your
+own key, and use **Test connection**. A successful test keeps the key in this
+page's memory for one agent request; it is never written to browser storage.
+Create a project and send a build request from the workbench. Redstone passes
+the key in the request body to its existing request-scoped BYOK gateway, not
+to generated project code. Reloading the page or sending the request clears
+the key; enter it again for another request. Choose **Start preview** to view
+the real Docker-backed app, and stop it when finished. Do not use this
+loopback-only development UI as a public service. Run `npm test`, `npm run
 typecheck`, and `npm run build` before committing. The frontend can render
 its disconnected state without Docker or an API process.

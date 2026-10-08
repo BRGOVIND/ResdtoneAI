@@ -1,4 +1,4 @@
-import type { Health, Preview, Project, Runtime, Task, TaskEvent } from './types'
+import type { BYOKConfig, Health, Preview, Project, ProviderTestResult, Runtime, Task, TaskEvent } from './types'
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -36,8 +36,11 @@ export const api = {
   createProject: (name: string) => request<Project>('/projects', {
     method: 'POST', body: JSON.stringify({ name, framework: 'react-vite-ts' }),
   }),
-  startTask: (projectId: string, message: string) => request<Pick<Task, 'task_id' | 'status'>>(
-    `${projectPath(projectId)}/agent`, { method: 'POST', body: JSON.stringify({ message }) },
+  testProvider: (byok: BYOKConfig) => request<ProviderTestResult>('/ai/test', {
+    method: 'POST', body: JSON.stringify({ byok }),
+  }),
+  startTask: (projectId: string, message: string, byok?: BYOKConfig) => request<Pick<Task, 'task_id' | 'status'>>(
+    `${projectPath(projectId)}/agent`, { method: 'POST', body: JSON.stringify({ message, ...(byok ? { byok } : {}) }) },
   ),
   task: (id: string) => request<Task>(taskPath(id)),
   taskEvents: async (id: string) => (await request<{ events: TaskEvent[] }>(`${taskPath(id)}/events`)).events,

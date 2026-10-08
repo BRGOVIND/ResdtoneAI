@@ -463,3 +463,17 @@ h1, h2 { font-weight: 650; }
   .error-page-line { bottom: 14%; }
   .error-page-caption { bottom: 3%; }
 }
+
+/* Local BYOK controls use existing page typography and action styling. */
+.provider-page .interior-heading { min-height: 165px; }
+.provider-connect { display: grid; grid-template-columns: minmax(150px, 190px) minmax(0, 1fr); align-items: center; gap: 13px 20px; max-width: 760px; padding: 20px 0 12px; }
+.provider-connect label { color: var(--ink); font-weight: 700; }
+.provider-connect input, .provider-connect select { width: 100%; min-height: 43px; padding: 9px 12px; border: 1px solid #abb9ae; border-radius: 6px; background: #fffdf6; color: var(--ink); font: inherit; }
+.provider-connect input:focus-visible, .provider-connect select:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.provider-connect button, .provider-connect p { grid-column: 2; margin: 0; }
+.provider-connect button { width: fit-content; min-width: 175px; padding: 0 20px; }
+.provider-connect p { max-width: 55ch; color: var(--ink-soft); font-size: var(--text-sm); }
+.provider-connect p[role='status'] { color: var(--ocean); font-weight: 700; }
+.provider-prompt { margin: 10px 0 0; color: var(--ink-soft); font-size: var(--text-sm); }
+.provider-prompt button { padding: 0; border: 0; border-bottom: 1px solid currentColor; background: none; color: var(--ocean); font: inherit; font-weight: 700; cursor: pointer; }
+@media (max-width: 620px) { .provider-connect { grid-template-columns: 1fr; gap: 7px; } .provider-connect label:not(:first-child) { margin-top: 10px; } .provider-connect button, .provider-connect p { grid-column: 1; } .provider-connect button { margin-top: 12px; } }

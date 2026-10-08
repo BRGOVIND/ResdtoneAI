@@ -42,7 +42,7 @@ describe('Redstone foundation', () => {
     expect(vi.mocked(fetch).mock.calls.every(([path]) => path === '/api/health')).toBe(true)
   })
 
-  it('creates real project and sends request to that project only', async () => {
+  it('creates real project but does not send an agent request without BYOK', async () => {
     const calls: { path: string; body?: string }[] = []
     vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
       calls.push({ path, body: init?.body as string | undefined })
@@ -63,9 +63,9 @@ describe('Redstone foundation', () => {
     expect(within(screen.getByRole('region', { name: 'Redstone signal path' })).getByText('Created')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Agent' }))
     await user.type(screen.getByLabelText('Describe a change'), 'Build a portfolio')
-    await user.click(screen.getByRole('button', { name: 'Send request' }))
-    await screen.findByText('agent / completed')
-    expect(calls.find(call => call.path.endsWith('/agent'))?.body).toBe(JSON.stringify({ message: 'Build a portfolio' }))
+    expect((screen.getByRole('button', { name: 'Send request' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Set up provider' })).toBeTruthy()
+    expect(calls.some(call => call.path.endsWith('/agent'))).toBe(false)
     expect(calls.some(call => call.path.includes('ws_private'))).toBe(false)
     expect(calls.some(call => call.body?.includes('credential'))).toBe(false)
     await user.click(screen.getByRole('button', { name: 'Preview' }))
@@ -124,6 +124,7 @@ describe('Redstone foundation', () => {
   it('keeps a failed agent request editable and shows a safe provider message', async () => {
     vi.stubGlobal('fetch', vi.fn(async (path: string) => {
       if (path === '/api/health') return json({ status: 'ok', runtime: { provider: 'docker', available: true, isolated: true } })
+      if (path === '/api/ai/test') return json({ connected: true })
       if (path === '/api/projects') return json({ project_id: 'prj_failed', workspace_id: 'ws_private', framework: 'react-vite-ts', status: 'created' })
       if (path === '/api/projects/prj_failed/agent') return json({ task_id: 'task_failed', status: 'failed' })
       if (path === '/api/agent/tasks/task_failed') return json({ task_id: 'task_failed', project_id: 'prj_failed', status: 'failed', current_step: 'error', iterations_used: 0, changeset_id: null, error: { error_code: 'AI_NOT_CONFIGURED', message: 'SECRET upstream detail' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' })
@@ -132,6 +133,11 @@ describe('Redstone foundation', () => {
     }))
     const user = userEvent.setup()
     render(<App />)
+    await user.click(screen.getByRole('link', { name: 'Providers' }))
+    await user.type(screen.getByLabelText('API key'), 'TEST_FAILED_TASK_KEY_12345')
+    await user.click(screen.getByRole('button', { name: 'Test connection' }))
+    await screen.findByText('Connected. Key ready for one build request.')
+    await user.click(screen.getByRole('link', { name: 'Workspace' }))
     await user.click(screen.getByRole('button', { name: 'Project' }))
     await user.type(screen.getByLabelText('Project name'), 'Failure trial')
     await user.click(screen.getByRole('button', { name: /create project/i }))
@@ -139,9 +145,46 @@ describe('Redstone foundation', () => {
     await user.click(screen.getByRole('button', { name: 'Agent' }))
     await user.type(screen.getByLabelText('Describe a change'), 'Help me build')
     await user.click(screen.getByRole('button', { name: 'Send request' }))
-    expect(await screen.findByText(/No AI provider is configured/)).toBeTruthy()
+    expect(await screen.findByText(/No provider key is ready/)).toBeTruthy()
     expect((screen.getByLabelText('Describe a change') as HTMLTextAreaElement).value).toBe('Help me build')
     expect(document.body.textContent).not.toContain('SECRET upstream detail')
+  })
+
+  it('uses a BYOK key only for connection test and one agent request', async () => {
+    const secret = 'TEST_BROWSER_BYOK_123456789'
+    const calls: { path: string; body?: string }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+      calls.push({ path, body: init?.body as string | undefined })
+      if (path === '/api/ai/test') return json({ connected: true })
+      if (path === '/api/projects') return json({ project_id: 'prj_byok', workspace_id: 'ws_private', framework: 'react-vite-ts', status: 'created' })
+      if (path === '/api/projects/prj_byok/agent') return json({ task_id: 'task_byok', status: 'completed' })
+      if (path === '/api/agent/tasks/task_byok') return json({ task_id: 'task_byok', project_id: 'prj_byok', status: 'completed', current_step: 'completion', iterations_used: 1, changeset_id: null, error: null })
+      if (path === '/api/agent/tasks/task_byok/events') return json({ events: [{ id: 'evt_byok', type: 'agent.completed', project_id: 'prj_byok', task_id: 'task_byok', payload: {}, created_at: '2026-01-01T00:00:00Z' }] })
+      return json({ status: 'ok', runtime: { provider: 'docker', available: true, isolated: true } })
+    }))
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('link', { name: 'Providers' }))
+    await user.type(screen.getByLabelText('API key'), secret)
+    await user.click(screen.getByRole('button', { name: 'Test connection' }))
+    expect(await screen.findByText('Connected. Key ready for one build request.')).toBeTruthy()
+    expect((screen.getByLabelText('API key') as HTMLInputElement).value).toBe('')
+    await user.click(screen.getByRole('link', { name: 'Workspace' }))
+    await user.click(screen.getByRole('button', { name: 'Project' }))
+    await user.type(screen.getByLabelText('Project name'), 'BYOK trial')
+    await user.click(screen.getByRole('button', { name: /create project/i }))
+    await screen.findByText('BYOK trial')
+    await user.click(screen.getByRole('button', { name: 'Agent' }))
+    await user.type(screen.getByLabelText('Describe a change'), 'Build a portfolio')
+    await user.click(screen.getByRole('button', { name: 'Send request' }))
+    await screen.findByText('agent / completed')
+    expect(JSON.parse(calls.find(call => call.path === '/api/ai/test')!.body!).byok.api_key).toBe(secret)
+    expect(JSON.parse(calls.find(call => call.path.endsWith('/agent'))!.body!).byok.api_key).toBe(secret)
+    expect(calls.filter(call => call.body?.includes(secret)).map(call => call.path)).toEqual(['/api/ai/test', '/api/projects/prj_byok/agent'])
+    expect(calls.every(call => !call.path.includes(secret))).toBe(true)
+    expect(document.body.textContent).not.toContain(secret)
+    await user.click(screen.getByRole('link', { name: 'Providers' }))
+    expect(screen.getByText('No key connected. Enter one to test before building.')).toBeTruthy()
   })
 
   it('shows safe error without rendering upstream response text', async () => {

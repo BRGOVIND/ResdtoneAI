@@ -7,6 +7,7 @@ FakeAIGateway. No network call happens in this file.
 from __future__ import annotations
 
 import httpx
+import importlib
 from fastapi.testclient import TestClient
 
 from agent_fakes import FakeAIGateway, action
@@ -250,6 +251,101 @@ def test_byok_reaches_provider_header_but_not_task_events_or_workspace(tmp_path)
     workspace = service.get_workspace(project["project_id"])
     assert all(secret not in path.read_text(encoding="utf-8", errors="ignore")
                for path in workspace.root.rglob("*") if path.is_file())
+
+
+def test_byok_real_gateway_tool_edit_keeps_key_out_of_project_and_snapshot(tmp_path, caplog):
+    secret = "TEST_EDIT_SECRET_9f8a7c6b5d4e"
+    actions = iter([
+        action("tool_call", tool="write_file", arguments={"path": "portfolio.txt", "content": "Portfolio"}),
+        action("complete", summary="Created portfolio"),
+    ])
+    seen = []
+
+    def upstream(request):
+        seen.append(request)
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"parts": [{"text": next(actions)}]}}],
+        })
+
+    config = RedstoneConfig(workspaces_root=tmp_path / "workspaces", ai=AIConfig(api_key=""))
+    service = AgentService(config, gateway=AIGateway(config.ai, transport=httpx.MockTransport(upstream)))
+    client = TestClient(create_app(
+        service=service, config=config, runtime_manager=RuntimeManager(FakeSandboxProvider()),
+    ))
+    project = client.post("/api/projects", json={"name": "Demo"}).json()
+    response = client.post(f"/api/projects/{project['project_id']}/agent", json={
+        "message": "Make a portfolio",
+        "byok": {"provider": "gemini", "model": "gemini-2.0-flash", "api_key": secret},
+    })
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    workspace = service.get_workspace(project["project_id"])
+    assert (workspace.project_root / "portfolio.txt").read_text() == "Portfolio"
+    assert len(seen) == 2
+    assert all(request.headers["x-goog-api-key"] == secret for request in seen)
+    assert all(secret not in str(request.url) and secret.encode() not in request.content for request in seen)
+    task_id = response.json()["task_id"]
+    assert secret not in repr(service.get_task(task_id))
+    assert secret not in client.get(f"/api/agent/tasks/{task_id}").text
+    assert secret not in client.get(f"/api/agent/tasks/{task_id}/events").text
+    assert all(secret.encode() not in path.read_bytes() for path in workspace.root.rglob("*") if path.is_file())
+    assert secret not in caplog.text
+
+
+def test_provider_connection_uses_only_byok_and_returns_no_secret(tmp_path, monkeypatch):
+    secret = "TEST_CONNECTION_SECRET_9f8a7c6b5d4e"
+    seen = []
+
+    def upstream(request):
+        seen.append(request)
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"parts": [{"text": "OK"}]}}],
+        })
+
+    config = RedstoneConfig(workspaces_root=tmp_path / "workspaces", ai=AIConfig(api_key=""))
+    module = importlib.import_module("redstone.api.app")
+    monkeypatch.setattr(module, "AIGateway", lambda ai: AIGateway(ai, transport=httpx.MockTransport(upstream)))
+    client = TestClient(create_app(config=config, runtime_manager=RuntimeManager(FakeSandboxProvider())))
+
+    response = client.post("/api/ai/test", json={
+        "byok": {"provider": "gemini", "model": "gemini-2.0-flash", "api_key": secret},
+    })
+
+    assert response.status_code == 200
+    assert response.json() == {"connected": True}
+    assert len(seen) == 1
+    assert seen[0].headers["x-goog-api-key"] == secret
+    assert secret not in response.text
+    assert secret not in repr(client.app)
+    assert not list((tmp_path / "workspaces").rglob("*"))
+
+
+def test_provider_connection_failure_is_bounded_and_secret_free(tmp_path, monkeypatch):
+    secret = "TEST_BAD_CONNECTION_SECRET_9f8a7c6b5d4e"
+
+    def upstream(request):
+        return httpx.Response(401, json={"error": {"message": secret}})
+
+    config = RedstoneConfig(workspaces_root=tmp_path / "workspaces", ai=AIConfig(api_key="", max_retries=0))
+    module = importlib.import_module("redstone.api.app")
+    monkeypatch.setattr(module, "AIGateway", lambda ai: AIGateway(ai, transport=httpx.MockTransport(upstream)))
+    client = TestClient(create_app(config=config, runtime_manager=RuntimeManager(FakeSandboxProvider())))
+
+    response = client.post("/api/ai/test", json={
+        "byok": {"provider": "gemini", "model": "gemini-2.0-flash", "api_key": secret},
+    })
+
+    assert response.status_code == 200
+    assert response.json() == {"connected": False, "error_code": "AI_AUTHENTICATION_FAILED"}
+    assert secret not in response.text
+
+
+def test_provider_connection_rejects_missing_byok_without_server_fallback(tmp_path):
+    client = _client(tmp_path)
+    response = client.post("/api/ai/test", json={"byok": None})
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "AGENT_INVALID_REQUEST"
 
 
 def test_invalid_byok_length_returns_safe_error(tmp_path):

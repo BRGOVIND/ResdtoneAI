@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api/client'
-import type { Health, Preview, Project, Runtime, Task, TaskEvent } from '../api/types'
+import type { BYOKConfig, Health, Preview, Project, Runtime, Task, TaskEvent } from '../api/types'
 import { Glyph } from '../components/Glyph'
 import { BrandMark } from '../components/BrandMark'
 import { EcosystemPage } from '../features/ecosystem/EcosystemPage'
@@ -32,6 +32,7 @@ export function App() {
   const [events, setEvents] = useState<TaskEvent[]>([])
   const [taskBusy, setTaskBusy] = useState(false)
   const [taskError, setTaskError] = useState<string | null>(null)
+  const [byok, setByok] = useState<BYOKConfig | null>(null)
   const [runtime, setRuntime] = useState<Runtime | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [statusBusy, setStatusBusy] = useState(false)
@@ -73,19 +74,28 @@ export function App() {
   }
 
   const startTask = async (message: string) => {
-    if (!project) return false
+    if (!project || !byok) return false
+    const requestByok = byok
+    setByok(null) // One build request only; no browser persistence.
     setTaskBusy(true); setTaskError(null); setEvents([]); setTask(null)
     try {
-      const started = await api.startTask(project.project_id, message)
+      const started = await api.startTask(project.project_id, message, requestByok ?? undefined)
       const [result, history] = await Promise.all([api.task(started.task_id), api.taskEvents(started.task_id)])
       setTask(result); setEvents(history)
       if (result.status === 'failed' && result.error?.error_code === 'AI_NOT_CONFIGURED')
-        setTaskError('No AI provider is configured for this local server. Your draft is still here.')
+        setTaskError('No provider key is ready. Connect your provider, then retry this draft.')
       else if (result.status !== 'completed')
         setTaskError('The task did not complete. Your draft is still here; check the task status before retrying.')
       return result.status === 'completed'
     } catch (error) { setTaskError(safeError(error)); return false }
     finally { setTaskBusy(false) }
+  }
+
+  const testProvider = async (config: BYOKConfig): Promise<boolean> => {
+    setByok(null)
+    const result = await api.testProvider(config)
+    if (result.connected) setByok(config)
+    return result.connected
   }
 
   const refreshStatus = async () => {
@@ -146,8 +156,8 @@ export function App() {
       <div className="header-actions"><button className="search-trigger" aria-label="Open command menu" onClick={() => setCommandOpen(true)}><Glyph name="search"/><span>Command</span><kbd>⌘ K</kbd></button></div>
     </header>
     <div id="main-content">
-      {page === 'workspace' ? <Workspace health={health} connectionError={connectionError} project={project} projectName={projectName} creating={creating} createError={createError} onCreate={createProject} task={task} events={events} taskBusy={taskBusy} taskError={taskError} onTask={startTask} preview={preview} runtime={runtime} onRefreshStatus={refreshStatus} onChangePreview={changePreview} statusBusy={statusBusy} statusError={statusError}/>
-        : page === 'providers' ? <ProviderPage/>
+      {page === 'workspace' ? <Workspace health={health} connectionError={connectionError} project={project} projectName={projectName} creating={creating} createError={createError} onCreate={createProject} task={task} events={events} taskBusy={taskBusy} taskError={taskError} onTask={startTask} providerReady={byok !== null} onOpenProviders={() => navigate('providers')} preview={preview} runtime={runtime} onRefreshStatus={refreshStatus} onChangePreview={changePreview} statusBusy={statusBusy} statusError={statusError}/>
+        : page === 'providers' ? <ProviderPage connected={byok !== null} onTest={testProvider} onClear={() => setByok(null)}/>
         : page === 'ecosystem' ? <EcosystemPage/>
         : page === 'help' ? <HelpPage/>
         : page === 'legal' ? <LegalPage/>

@@ -55,3 +55,15 @@ export interface Health {
   status: string
   runtime: { provider: string; available: boolean; isolated: boolean }
 }
+
+export interface BYOKConfig {
+  provider: 'gemini' | 'openai-compatible'
+  model: string
+  api_key: string
+  base_url?: string
+}
+
+export interface ProviderTestResult {
+  connected: boolean
+  error_code?: string
+}

@@ -25,6 +25,8 @@ interface Props {
   taskBusy: boolean
   taskError: string | null
   onTask: (message: string) => Promise<boolean>
+  providerReady: boolean
+  onOpenProviders: () => void
   preview: Preview | null
   runtime: Runtime | null
   onRefreshStatus: () => Promise<void>
@@ -44,7 +46,7 @@ function ProjectPanel({ project, projectName, onCreate, creating, error }: Pick<
   </section>
 }
 
-function AgentPanel({ project, task, events, taskBusy, taskError, onTask, message, setMessage }: Pick<Props, 'project' | 'task' | 'events' | 'taskBusy' | 'taskError' | 'onTask'> & { message: string; setMessage: (message: string) => void }) {
+function AgentPanel({ project, task, events, taskBusy, taskError, onTask, providerReady, onOpenProviders, message, setMessage }: Pick<Props, 'project' | 'task' | 'events' | 'taskBusy' | 'taskError' | 'onTask' | 'providerReady' | 'onOpenProviders'> & { message: string; setMessage: (message: string) => void }) {
   const [ideaError, setIdeaError] = useState<string | null>(null)
   const ideaInput = useRef<HTMLInputElement>(null)
   const submit = async (event: FormEvent) => { event.preventDefault(); const text = message.trim(); if (!project || taskBusy || !text) return; if (await onTask(text)) setMessage('') }
@@ -68,7 +70,7 @@ function AgentPanel({ project, task, events, taskBusy, taskError, onTask, messag
     </div>
     {taskError && <p className="inline-error" role="alert">{taskError}</p>}
     <div className="idea-intake"><div><strong>Have an idea written down?</strong><small>Choose text or Markdown. It fills your draft locally; nothing is sent yet.</small></div><input ref={ideaInput} id="idea-file" type="file" accept=".txt,.md,text/plain,text/markdown" onChange={readIdea} disabled={taskBusy}/><label htmlFor="idea-file">Add idea file</label>{ideaError && <p role="alert">{ideaError}</p>}</div>
-    <form className="agent-composer" onSubmit={submit}><label htmlFor="agent-message">Describe a change</label><textarea id="agent-message" rows={3} placeholder={project ? 'What should we build next?' : 'Draft an idea now, then create a project to send it.'} value={message} onChange={event => setMessage(event.target.value)} disabled={taskBusy} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }}/><div><span>{project ? '⌘ / Ctrl + Enter' : 'Create a project before sending'}</span><button className="send-button" type="submit" disabled={!project || !message.trim() || taskBusy} aria-label="Send request"><Glyph name="arrow"/></button></div></form>
+    <form className="agent-composer" onSubmit={submit}><label htmlFor="agent-message">Describe a change</label><textarea id="agent-message" rows={3} placeholder={project ? 'What should we build next?' : 'Draft an idea now, then create a project to send it.'} value={message} onChange={event => setMessage(event.target.value)} disabled={taskBusy} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }}/>{project && !providerReady && <p className="provider-prompt">Connect your provider before sending. <button type="button" onClick={onOpenProviders}>Set up provider</button></p>}<div><span>{!project ? 'Create a project before sending' : !providerReady ? 'Provider connection needed' : '⌘ / Ctrl + Enter'}</span><button className="send-button" type="submit" disabled={!project || !providerReady || !message.trim() || taskBusy} aria-label="Send request"><Glyph name="arrow"/></button></div></form>
   </section>
 }
 
@@ -141,7 +143,7 @@ export function Workspace(props: Props) {
       <div className="workbench-heading"><div><div className="eyebrow">Your workbench</div><h2 id="workbench-heading">Make the next change.</h2></div><p>Project, agent, and preview stay together here. Nothing is simulated.</p></div>
       <div className="workspace-meta"><span>{props.connectionError ? 'API offline' : props.health ? 'API connected' : 'Connecting'}</span><span>Workspace / {props.project?.project_id ?? 'unassigned'}</span><span>Local development</span></div>
       <div className="surface-tabs" role="group" aria-label="Workspace panels"><button className={surface === 'preview' ? 'active' : ''} onClick={() => setSurface('preview')}>Preview</button><button className={surface === 'agent' ? 'active' : ''} onClick={() => setSurface('agent')}>Agent</button><button className={surface === 'files' ? 'active' : ''} onClick={() => setSurface('files')}>Project</button></div>
-      <div className={'workspace-grid surface-' + surface}><ProjectPanel project={props.project} projectName={props.projectName} onCreate={props.onCreate} creating={props.creating} error={props.createError}/><AgentPanel project={props.project} task={props.task} events={props.events} taskBusy={props.taskBusy} taskError={props.taskError} onTask={props.onTask} message={message} setMessage={setMessage}/><PreviewStage project={props.project} preview={props.preview} health={props.health} runtime={props.runtime} onRefreshStatus={props.onRefreshStatus} onChangePreview={props.onChangePreview} statusBusy={props.statusBusy} statusError={props.statusError}/></div>
+      <div className={'workspace-grid surface-' + surface}><ProjectPanel project={props.project} projectName={props.projectName} onCreate={props.onCreate} creating={props.creating} error={props.createError}/><AgentPanel project={props.project} task={props.task} events={props.events} taskBusy={props.taskBusy} taskError={props.taskError} onTask={props.onTask} providerReady={props.providerReady} onOpenProviders={props.onOpenProviders} message={message} setMessage={setMessage}/><PreviewStage project={props.project} preview={props.preview} health={props.health} runtime={props.runtime} onRefreshStatus={props.onRefreshStatus} onChangePreview={props.onChangePreview} statusBusy={props.statusBusy} statusError={props.statusError}/></div>
       {props.connectionError && <div className="connection-banner" role="status"><Glyph name="orbit"/><span>{props.connectionError} Interface remains available; backend operations require connection.</span></div>}
     </section>
   </main>

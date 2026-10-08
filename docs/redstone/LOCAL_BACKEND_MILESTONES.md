@@ -157,10 +157,36 @@ inheritance and local wiring only. In this task's process and Windows User and
 Machine environment scopes, `AI_API_KEY` and `GEMINI_API_KEY` were absent.
 No real credential was located, backend provider detection with a real key
 was not possible, and no real model or portfolio task was run. Milestone 2
-therefore remains **in progress**; full acceptance and the complete-suite
-rerun still require a credential in the backend's launch environment. Seven
+therefore remained **in progress** under that server-key approach; full
+acceptance was not run in that attempt. Seven
 focused configuration tests passed; no backend, preview, managed Docker
 container, or managed Docker network was left running by this follow-up.
+
+### BYOK acceptance path (2026-10-08)
+
+The operator clarified that Milestone 2 must be accepted through an end-user
+credential entered in the Redstone browser, not a personal server-side
+`AI_API_KEY`. The server-environment blocker above describes the earlier
+attempt only; it is **not** a prerequisite for the BYOK path. The existing
+agent API already accepts `byok` per request and routes it through
+`EphemeralBYOK`, `AgentService`, and `AIGateway`. Frontend code previously
+omitted that field. The Providers page now offers provider, model, key, and a
+bounded connection test using the same gateway. It retains a successful key
+only in browser memory until one build request, then clears it; no browser
+storage or server credential store was added. Workbench blocks agent sends
+until a provider was tested.
+
+Mock-transport backend tests verify the BYOK key reaches the upstream auth
+header, never task/events/workspace output, and provider rejection stays
+bounded. Frontend tests verify the key appears only in the two intended POST
+bodies, never URLs or rendered text, and is consumed after one agent request.
+The focused backend API suite passed 20 tests; combined agent, gateway, and
+API checks passed 106 tests. The frontend passed 12 tests,
+typecheck, build, and lint. A browser accessibility check found no violations
+in the provider page's main content. These are **not** a real provider/model
+call or portfolio acceptance. Milestone 2 remains **in progress** until the
+user enters a real key through the UI and the complete Docker-backed flow and
+full Python suite pass.
 
 ## 3. Local session continuity and control
 
