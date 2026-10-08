@@ -38,6 +38,15 @@ classes are not, so nothing downstream can grow a dependency on a specific one.
 | `gemini` | `GeminiProvider` | `x-goog-api-key` header | `…/models/{model}:generateContent` |
 | `openai-compatible` | `OpenAICompatibleProvider` | `Authorization: Bearer` | `{base_url}/chat/completions` |
 
+Gemini 3.8 Flash still supports the existing `v1beta/models/{model}:generateContent`
+contract with `x-goog-api-key`; moving this adapter to the Interactions API is
+not needed for this model. Google's [Generate Content migration guide](https://ai.google.dev/gemini-api/docs/generate-content/latest-model)
+documents that endpoint. Its [thinking guide](https://ai.google.dev/gemini-api/docs/generate-content/thinking)
+also warns that `maxOutputTokens` includes thinking tokens. The local BYOK
+connection test therefore uses a bounded 2,048-token ceiling rather than its
+former 16-token ceiling, which could stop before visible text. A connection
+with empty text is not treated as successful.
+
 `openai-compatible` is driven entirely by `(base_url, model, key)`, so Groq,
 OpenRouter and any other OpenAI-shaped API are configuration, not code. Provider
 names resolve from a fixed dict — there is no dynamic import, so a name can

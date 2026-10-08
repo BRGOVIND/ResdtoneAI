@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import httpx
 import importlib
+import json
 from fastapi.testclient import TestClient
 
 from agent_fakes import FakeAIGateway, action
@@ -309,16 +310,46 @@ def test_provider_connection_uses_only_byok_and_returns_no_secret(tmp_path, monk
     client = TestClient(create_app(config=config, runtime_manager=RuntimeManager(FakeSandboxProvider())))
 
     response = client.post("/api/ai/test", json={
-        "byok": {"provider": "gemini", "model": "gemini-2.0-flash", "api_key": secret},
+        "byok": {"provider": "gemini", "model": "gemini-3.8-flash", "api_key": secret},
     })
 
     assert response.status_code == 200
     assert response.json() == {"connected": True}
     assert len(seen) == 1
+    assert seen[0].method == "POST"
+    assert str(seen[0].url) == "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
     assert seen[0].headers["x-goog-api-key"] == secret
+    body = json.loads(seen[0].content)
+    assert body["contents"] == [{"role": "user", "parts": [{"text": "Reply with OK."}]}]
+    assert body["generationConfig"] == {"maxOutputTokens": 2048}
+    assert not any(name in body["generationConfig"] for name in
+                   ("temperature", "topP", "topK", "candidateCount", "thinkingBudget"))
+    assert secret.encode() not in seen[0].content
     assert secret not in response.text
     assert secret not in repr(client.app)
     assert not list((tmp_path / "workspaces").rglob("*"))
+
+
+def test_gemini_38_connection_rejects_empty_max_tokens_response(tmp_path, monkeypatch):
+    secret = "TEST_MAX_TOKENS_SECRET_9f8a7c6b5d4e"
+
+    def upstream(request):
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"parts": [{"text": ""}]}, "finishReason": "MAX_TOKENS"}],
+        })
+
+    config = RedstoneConfig(workspaces_root=tmp_path / "workspaces", ai=AIConfig(api_key=""))
+    module = importlib.import_module("redstone.api.app")
+    monkeypatch.setattr(module, "AIGateway", lambda ai: AIGateway(ai, transport=httpx.MockTransport(upstream)))
+    client = TestClient(create_app(config=config, runtime_manager=RuntimeManager(FakeSandboxProvider())))
+
+    response = client.post("/api/ai/test", json={
+        "byok": {"provider": "gemini", "model": "gemini-3.8-flash", "api_key": secret},
+    })
+
+    assert response.status_code == 200
+    assert response.json() == {"connected": False, "error_code": "AI_MALFORMED_RESPONSE"}
+    assert secret not in response.text
 
 
 def test_provider_connection_failure_is_bounded_and_secret_free(tmp_path, monkeypatch):

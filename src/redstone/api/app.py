@@ -29,7 +29,7 @@ from .service_provider import get_runtime_manager, get_service, set_runtime_mana
 from ..agent.errors import AgentErrorCode, RedstoneAgentError
 from ..agent.service import AgentService
 from ..agent.byok import EphemeralBYOK
-from ..ai import AIGateway, AIRequest, RedstoneAIError
+from ..ai import AIGateway, AIErrorCode, AIRequest, RedstoneAIError
 from ..runtime.errors import RedstoneRuntimeError, RuntimeErrorCode
 from ..runtime.manager import RuntimeManager
 from ..runtime.models import TERMINAL_RUNTIME_STATES
@@ -203,9 +203,11 @@ def create_app(
         byok = EphemeralBYOK.from_payload(payload.byok)
         gateway = AIGateway(resolved_config.ai)
         try:
-            await run_in_threadpool(
+            response = await run_in_threadpool(
                 gateway.generate,
-                AIRequest.from_prompt("Reply with OK.", max_output_tokens=16),
+                # Gemini 3.x counts thinking tokens in this ceiling. A tiny
+                # cap can return MAX_TOKENS before any visible text appears.
+                AIRequest.from_prompt("Reply with OK.", max_output_tokens=2048),
                 provider=byok.provider,
                 model=byok.model,
                 byok_key=byok.credential.reveal(),
@@ -213,6 +215,8 @@ def create_app(
             )
         except RedstoneAIError as exc:
             return {"connected": False, "error_code": exc.code.value}
+        if not response.text.strip():
+            return {"connected": False, "error_code": AIErrorCode.MALFORMED_RESPONSE.value}
         return {"connected": True}
 
     @app.get("/api/projects/{project_id}/dependencies")
